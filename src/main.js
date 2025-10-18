@@ -329,84 +329,132 @@ async function main() {
                     try {
                         crawlerLog.info(`Processing DETAIL page: ${request.url}`);
                         
-                        // DEBUG: Log page content length and key elements
-                        const bodyHtml = $('body').html();
-                        const titleElements = $('h1, h2, title, [property="og:title"]').length;
-                        const textContent = $.text().substring(0, 200);
-                        crawlerLog.info(`Page: body_chars=${bodyHtml ? bodyHtml.length : 0}, titles=${titleElements}, text="${textContent}..."`);
-                        
-                        // Try JSON-LD first
+                        // Try JSON-LD first (most reliable)
                         const json = extractFromJsonLd($);
-                        const data = json || {};
+                        let data = json ? { ...json } : {};
                         
                         if (json) {
-                            crawlerLog.info(`✓ JSON-LD data found: title="${json.title}", company="${json.company}"`);
+                            crawlerLog.info(`✓ JSON-LD found: title="${json.title}", company="${json.company}"`);
                         } else {
-                            crawlerLog.info(`No JSON-LD found, using HTML selectors`);
+                            crawlerLog.info(`No JSON-LD, using HTML selectors`);
                         }
 
-                        // Aggressive title extraction - try everything
+                        // TITLE: Try h1/h2 first, then meta tags
                         if (!data.title) {
-                            // Try multiple selectors
                             data.title = 
                                 $('h1').first().text().trim() ||
-                                $('h2').first().text().trim() ||
+                                $('h2.sc-kFmGSj, h2').first().text().trim() ||
                                 $('[property="og:title"]').attr('content') ||
-                                $('meta[property="og:title"]').attr('content') ||
                                 $('meta[name="title"]').attr('content') ||
                                 $('title').text().split('|')[0].trim() ||
-                                $('.job-title, .position-title, [class*="title"]').first().text().trim() ||
                                 null;
+                            if (data.title) crawlerLog.debug(`Found title: "${data.title.substring(0, 50)}"`);
                         }
                         
-                        // Aggressive company extraction
+                        // COMPANY: Check h2 after h1, then other selectors
                         if (!data.company) {
+                            // h2 right after h1 is typically company name
+                            const h2 = $('h2.sc-gMPfHu, h2').first().text().trim();
                             data.company = 
-                                $('h3').first().text().trim() ||
+                                h2 ||
                                 $('[property="og:site_name"]').attr('content') ||
                                 $('meta[property="og:site_name"]').attr('content') ||
-                                $('.company-name, .employer, .company, [class*="company"]').first().text().trim() ||
-                                $('header [class*="company"], header strong').first().text().trim() ||
+                                $('[class*="company"]').first().text().trim() ||
                                 null;
+                            if (data.company) crawlerLog.debug(`Found company: "${data.company}"`);
                         }
                         
-                        // Description extraction
+                        // DATE POSTED: Look for "Date Posted" in detail list
+                        if (!data.date_posted) {
+                            // Find the "Date Posted" row in the detail list
+                            const detailItems = $('#detail-list-wrapper li');
+                            for (let i = 0; i < detailItems.length; i++) {
+                                const item = detailItems.eq(i);
+                                const label = item.find('p.sc-hQNzwn').first().text().trim();
+                                if (label.includes('Date Posted')) {
+                                    data.date_posted = item.find('p.sc-bGeIhM').first().text().trim();
+                                    break;
+                                }
+                            }
+                            if (!data.date_posted) {
+                                data.date_posted = $('time[datetime]').attr('datetime') || null;
+                            }
+                            if (data.date_posted) crawlerLog.debug(`Found date: "${data.date_posted}"`);
+                        }
+                        
+                        // LOCATION: Look for "Location" row in detail list
+                        if (!data.location) {
+                            const detailItems = $('#detail-list-wrapper li');
+                            for (let i = 0; i < detailItems.length; i++) {
+                                const item = detailItems.eq(i);
+                                const label = item.find('p.sc-hQNzwn').first().text().trim();
+                                if (label === 'Location') {
+                                    data.location = item.find('p.sc-bGeIhM span').first().text().trim();
+                                    break;
+                                }
+                            }
+                            if (!data.location) {
+                                data.location = $('[class*="location"]').first().text().trim() || null;
+                            }
+                            if (data.location) crawlerLog.debug(`Found location: "${data.location}"`);
+                        }
+                        
+                        // JOB TYPE: Look for "Job Type" or "Job Schedule" in detail list
+                        let jobType = null;
+                        if (!jobType) {
+                            const detailItems = $('#detail-list-wrapper li');
+                            for (let i = 0; i < detailItems.length; i++) {
+                                const item = detailItems.eq(i);
+                                const label = item.find('p.sc-hQNzwn').first().text().trim();
+                                if (label === 'Job Type' || label === 'Job Schedule') {
+                                    jobType = item.find('p.sc-bGeIhM').first().text().trim();
+                                    break;
+                                }
+                            }
+                        }
+                        
+                        // CATEGORY: Look for "Categories" row in detail list
+                        let categories = [];
+                        const detailItems = $('#detail-list-wrapper li');
+                        for (let i = 0; i < detailItems.length; i++) {
+                            const item = detailItems.eq(i);
+                            const label = item.find('p.sc-hQNzwn').first().text().trim();
+                            if (label === 'Categories') {
+                                // Extract all category links
+                                item.find('a').each((idx, elem) => {
+                                    const catText = $(elem).text().trim();
+                                    if (catText && catText !== ',' && catText !== '&#xa0;') {
+                                        categories.push(catText);
+                                    }
+                                });
+                                break;
+                            }
+                        }
+                        data.category = categories.length > 0 ? categories.join(', ') : (category || null);
+                        if (data.category) crawlerLog.debug(`Found category: "${data.category}"`);
+                        
+                        // DESCRIPTION: Look for "About the Role" section
                         if (!data.description_html) {
-                            const desc = 
-                                $('.job-description').first().html() ||
-                                $('[class*="description"]').first().html() ||
-                                $('.entry-content').first().html() ||
-                                $('main').first().html() ||
-                                $('article').first().html() ||
-                                null;
-                            data.description_html = desc && desc.trim().length > 50 ? desc : null;
+                            const aboutRole = $('#about-the-role-wrapper');
+                            if (aboutRole.length > 0) {
+                                data.description_html = aboutRole.html();
+                            } else {
+                                data.description_html = 
+                                    $('.job-description').first().html() ||
+                                    $('[class*="description"]').first().html() ||
+                                    $('main').first().html() ||
+                                    $('article').first().html() ||
+                                    null;
+                            }
                         }
                         data.description_text = data.description_html ? cleanText(data.description_html) : null;
-                        
-                        // Location
-                        if (!data.location) {
-                            data.location = 
-                                $('[class*="location"]').first().text().trim() ||
-                                $('meta[property="og:locality"]').attr('content') ||
-                                null;
-                        }
-                        
-                        // Date posted
-                        if (!data.date_posted) {
-                            data.date_posted = 
-                                $('time[datetime]').attr('datetime') ||
-                                $('[class*="date"], .posted-date').first().text().trim() ||
-                                null;
-                        }
-
-                        // Category extraction
-                        let cat = category || null;
 
                         const itemUrl = normalizeUrl(request.url);
                         const item = {
                             title: data.title || null,
                             company: data.company || null,
-                            category: cat || null,
+                            job_type: jobType || null,
+                            category: data.category || null,
                             location: data.location || null,
                             date_posted: data.date_posted || null,
                             description_html: data.description_html || null,
