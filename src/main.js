@@ -276,9 +276,13 @@ async function main() {
                         if (toEnqueue.length > 0) {
                             crawlerLog.info(`Enqueueing ${toEnqueue.length} job detail pages`);
                             try {
-                                await enqueueLinks({ requests: toEnqueue });
+                                // Enqueue all detail pages at once by using urls array
+                                // userData will be applied to all URLs, so we enqueue each with its userData
+                                for (const req of toEnqueue) {
+                                    await enqueueLinks({ urls: [req.url], userData: req.userData });
+                                }
                             } catch (err) {
-                                crawlerLog.error(`Failed to enqueue links: ${err.message}`);
+                                crawlerLog.error(`Failed to enqueue detail links: ${err.message}`);
                             }
                         } else {
                             crawlerLog.warning(`No new job links to enqueue (dedupe filtered all)`);
