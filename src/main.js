@@ -2,7 +2,6 @@
 import { Actor, log } from 'apify';
 import { CheerioCrawler, Dataset } from 'crawlee';
 import { load as cheerioLoad } from 'cheerio';
-import { gotScraping } from 'got-scraping';
 
 // Single-entrypoint main
 await Actor.init();
@@ -41,10 +40,10 @@ async function main() {
         };
 
         const buildStartUrl = (kw, loc, cat) => {
-            const u = new URL('https://remote.co/remote-jobs/search/');
-            if (kw) u.searchParams.set('search_keywords', String(kw).trim());
-            if (loc) u.searchParams.set('search_location', String(loc).trim());
-            if (cat) u.searchParams.set('search_categories', String(cat).trim());
+            let u = new URL('https://remote.co/remote-jobs/search/');
+            if (kw && String(kw).trim()) u.searchParams.set('search_keywords', String(kw).trim());
+            if (loc && String(loc).trim()) u.searchParams.set('search_location', String(loc).trim());
+            if (cat && String(cat).trim()) u.searchParams.set('search_categories', String(cat).trim());
             return u.href;
         };
 
@@ -53,6 +52,8 @@ async function main() {
         if (startUrl) initial.push({ url: startUrl });
         if (url) initial.push({ url });
         if (!initial.length) initial.push({ url: buildStartUrl(keyword, location, category) });
+        
+        log.info(`Starting with URLs: ${initial.map(i => i.url).join(', ')}`);
 
         // Proxy configuration with datacenter by default
         const proxyConf = proxyConfiguration ? await Actor.createProxyConfiguration(proxyConfiguration) : undefined;
@@ -102,22 +103,40 @@ async function main() {
 
         function findJobLinks($, base) {
             const links = new Set();
-            // Remote.co specific: job detail links contain '/job-details/' pattern
+            
+            // Strategy 1: Look for /job-details/ pattern (most specific)
             $('a[href*="/job-details/"]').each((_, a) => {
                 const href = $(a).attr('href');
                 if (!href) return;
                 const abs = toAbs(href, base);
-                if (abs && abs.includes('/job-details/')) links.add(abs);
+                if (abs) links.add(abs);
             });
-            // Fallback for any /remote-jobs/ links that aren't search pages
+            
+            // Strategy 2: Look for any /remote-jobs/ links that are NOT search pages
             if (links.size === 0) {
                 $('a[href*="/remote-jobs/"]').each((_, a) => {
                     const href = $(a).attr('href');
-                    if (!href || href.includes('/search')) return;
+                    if (!href) return;
+                    // Skip search pages and pagination
+                    if (href.includes('/search') || href.includes('?page=')) return;
                     const abs = toAbs(href, base);
                     if (abs) links.add(abs);
                 });
             }
+            
+            // Strategy 3: Broad search - any link with job-like UUID patterns
+            if (links.size === 0) {
+                $('a[href]').each((_, a) => {
+                    const href = $(a).attr('href');
+                    if (!href) return;
+                    // Match UUID-like patterns (e.g., abc123-def456-ghi789)
+                    if (/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/i.test(href)) {
+                        const abs = toAbs(href, base);
+                        if (abs && !abs.includes('/search')) links.add(abs);
+                    }
+                });
+            }
+            
             return [...links];
         }
 
@@ -213,10 +232,29 @@ async function main() {
 
                 // polite random delay
                 await randomDelay();
+                
+                crawlerLog.info(`Processing ${label} page: ${request.url}`);
 
                 if (label === 'LIST') {
+                    // Debug: log page structure
+                    const allLinks = $('a[href]').length;
+                    crawlerLog.info(`Total links on page: ${allLinks}`);
+                    
                     const links = findJobLinks($, request.url);
-                    crawlerLog.info(`LIST page ${pageNo} (${request.url}) -> found ${links.length} job links`);
+                    crawlerLog.info(`LIST page ${pageNo} -> found ${links.length} job links`);
+                    
+                    // Log first few links for debugging
+                    if (links.length > 0) {
+                        crawlerLog.info(`Sample job links: ${links.slice(0, 3).join(', ')}`);
+                    } else {
+                        crawlerLog.warning(`No job links found! Page may have different structure.`);
+                        // Log some sample links to help debug
+                        const sampleLinks = [];
+                        $('a[href]').slice(0, 10).each((_, a) => {
+                            sampleLinks.push($(a).attr('href'));
+                        });
+                        crawlerLog.info(`Sample page links: ${sampleLinks.join(', ')}`);
+                    }
 
                     // normalize and dedupe links
                     const normalized = links.map(normalizeUrl).filter(Boolean).filter((u, i, arr) => arr.indexOf(u) === i);
@@ -225,16 +263,25 @@ async function main() {
 
                     const toEnqueue = [];
                     for (const l of toConsider) {
-                        if (dedupe && seenUrls.has(l)) continue;
+                        if (dedupe && seenUrls.has(l)) {
+                            crawlerLog.debug(`Already seen: ${l}`);
+                            continue;
+                        }
                         seenUrls.add(l);
                         toEnqueue.push({ url: l, userData: { label: 'DETAIL' } });
                         if (toEnqueue.length >= remaining) break;
                     }
 
                     if (collectDetails) {
-                        if (toEnqueue.length) {
+                        if (toEnqueue.length > 0) {
                             crawlerLog.info(`Enqueueing ${toEnqueue.length} job detail pages`);
-                            await enqueueLinks({ requests: toEnqueue });
+                            try {
+                                await enqueueLinks({ requests: toEnqueue });
+                            } catch (err) {
+                                crawlerLog.error(`Failed to enqueue links: ${err.message}`);
+                            }
+                        } else {
+                            crawlerLog.warning(`No new job links to enqueue (dedupe filtered all)`);
                         }
                     } else {
                         const toPush = toEnqueue.map(r => ({ url: r.url, _source: 'remote.co' }));
@@ -245,17 +292,27 @@ async function main() {
                         }
                     }
 
-                    // Pagination: continue if we need more results and haven't hit max pages
-                    if (saved < RESULTS_WANTED && pageNo < MAX_PAGES && links.length > 0) {
+                    // Pagination: continue if we haven't hit max pages
+                    // When collectDetails=true, we enqueue and continue paginating
+                    // When collectDetails=false, we check if saved < RESULTS_WANTED
+                    const shouldPaginate = collectDetails 
+                        ? (pageNo < MAX_PAGES && toEnqueue.length > 0) 
+                        : (saved < RESULTS_WANTED && pageNo < MAX_PAGES);
+                    
+                    if (shouldPaginate) {
                         const next = findNextPage($, request.url, pageNo);
                         if (next) {
-                            crawlerLog.info(`Enqueueing next page: ${next}`);
-                            await enqueueLinks({ urls: [next], userData: { label: 'LIST', pageNo: pageNo + 1 } });
+                            crawlerLog.info(`Enqueueing next page ${pageNo + 1}: ${next}`);
+                            try {
+                                await enqueueLinks({ urls: [next], userData: { label: 'LIST', pageNo: pageNo + 1 } });
+                            } catch (err) {
+                                crawlerLog.error(`Failed to enqueue next page: ${err.message}`);
+                            }
                         } else {
-                            crawlerLog.info(`No next page found, stopping pagination`);
+                            crawlerLog.info(`No next page found, stopping pagination at page ${pageNo}`);
                         }
                     } else {
-                        crawlerLog.info(`Pagination stopped: saved=${saved}, RESULTS_WANTED=${RESULTS_WANTED}, pageNo=${pageNo}, MAX_PAGES=${MAX_PAGES}`);
+                        crawlerLog.info(`Pagination stopped: collectDetails=${collectDetails}, saved=${saved}/${RESULTS_WANTED}, page=${pageNo}/${MAX_PAGES}`);
                     }
                     return;
                 }
@@ -357,8 +414,13 @@ async function main() {
         });
 
         // run crawler
+        log.info(`Starting crawler with ${initial.length} initial URL(s)`);
         await crawler.run(initial.map(u => ({ ...u, userData: { label: 'LIST', pageNo: 1 } })));
-        log.info(`Finished. Saved ${saved} items`);
+        log.info(`Crawler finished. Total saved: ${saved} items`);
+        
+        if (saved === 0) {
+            log.warning(`No jobs were scraped! Check logs for errors or selector issues.`);
+        }
     } finally {
         await Actor.exit();
     }
