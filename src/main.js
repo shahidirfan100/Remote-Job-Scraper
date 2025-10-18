@@ -327,54 +327,80 @@ async function main() {
                         return;
                     }
                     try {
+                        crawlerLog.info(`Processing DETAIL page: ${request.url}`);
+                        
+                        // DEBUG: Log page content length and key elements
+                        const bodyHtml = $('body').html();
+                        const titleElements = $('h1, h2, title, [property="og:title"]').length;
+                        const textContent = $.text().substring(0, 200);
+                        crawlerLog.info(`Page: body_chars=${bodyHtml ? bodyHtml.length : 0}, titles=${titleElements}, text="${textContent}..."`);
+                        
                         // Try JSON-LD first
                         const json = extractFromJsonLd($);
                         const data = json || {};
+                        
+                        if (json) {
+                            crawlerLog.info(`✓ JSON-LD data found: title="${json.title}", company="${json.company}"`);
+                        } else {
+                            crawlerLog.info(`No JSON-LD found, using HTML selectors`);
+                        }
 
-                        // Remote.co specific selectors with robust fallbacks
-                        // Title from h1, meta, or JSON-LD
+                        // Aggressive title extraction - try everything
                         if (!data.title) {
-                            data.title = $('h1').first().text().trim() || 
-                                        $('meta[property="og:title"]').attr('content') || 
-                                        $('title').text().split('|')[0].trim() || null;
+                            // Try multiple selectors
+                            data.title = 
+                                $('h1').first().text().trim() ||
+                                $('h2').first().text().trim() ||
+                                $('[property="og:title"]').attr('content') ||
+                                $('meta[property="og:title"]').attr('content') ||
+                                $('meta[name="title"]').attr('content') ||
+                                $('title').text().split('|')[0].trim() ||
+                                $('.job-title, .position-title, [class*="title"]').first().text().trim() ||
+                                null;
                         }
                         
-                        // Company name - Remote.co typically shows this as h3 or in a company section
+                        // Aggressive company extraction
                         if (!data.company) {
-                            data.company = $('h3').first().text().trim() || 
-                                          $('.company-name, [class*="company"]').first().text().trim() ||
-                                          $('meta[property="og:site_name"]').attr('content') || null;
+                            data.company = 
+                                $('h3').first().text().trim() ||
+                                $('[property="og:site_name"]').attr('content') ||
+                                $('meta[property="og:site_name"]').attr('content') ||
+                                $('.company-name, .employer, .company, [class*="company"]').first().text().trim() ||
+                                $('header [class*="company"], header strong').first().text().trim() ||
+                                null;
                         }
                         
-                        // Job description - look for main content area
+                        // Description extraction
                         if (!data.description_html) {
-                            const desc = $('.job-description, [class*="description"], .entry-content, article, main').first();
-                            data.description_html = desc && desc.length ? String(desc.html()).trim() : $('body').html();
+                            const desc = 
+                                $('.job-description').first().html() ||
+                                $('[class*="description"]').first().html() ||
+                                $('.entry-content').first().html() ||
+                                $('main').first().html() ||
+                                $('article').first().html() ||
+                                null;
+                            data.description_html = desc && desc.trim().length > 50 ? desc : null;
                         }
                         data.description_text = data.description_html ? cleanText(data.description_html) : null;
                         
                         // Location
                         if (!data.location) {
-                            data.location = $('[class*="location"], .location, [itemprop="jobLocation"]').first().text().trim() ||
-                                           $('meta[property="og:locality"]').attr('content') || null;
+                            data.location = 
+                                $('[class*="location"]').first().text().trim() ||
+                                $('meta[property="og:locality"]').attr('content') ||
+                                null;
                         }
                         
                         // Date posted
                         if (!data.date_posted) {
-                            data.date_posted = $('time[datetime]').attr('datetime') || 
-                                              $('meta[property="article:published_time"]').attr('content') ||
-                                              $('[class*="date"], .posted-date').first().text().trim() || null;
+                            data.date_posted = 
+                                $('time[datetime]').attr('datetime') ||
+                                $('[class*="date"], .posted-date').first().text().trim() ||
+                                null;
                         }
 
                         // Category extraction
                         let cat = category || null;
-                        if (!cat) {
-                            // Try breadcrumbs
-                            const crumbs = $('nav.breadcrumb, .breadcrumbs, [class*="breadcrumb"]');
-                            if (crumbs && crumbs.length) cat = crumbs.find('a').last().text().trim() || null;
-                            // Try category/tag elements
-                            if (!cat) cat = $('[class*="category"], .category, .job-type, .job-category, [class*="tag"]').first().text().trim() || null;
-                        }
 
                         const itemUrl = normalizeUrl(request.url);
                         const item = {
@@ -390,14 +416,15 @@ async function main() {
 
                         // Skip if no title (likely parse error)
                         if (!item.title) {
-                            crawlerLog.warning(`Skipping ${request.url} - no title found`);
+                            crawlerLog.warning(`⚠ Skipping ${request.url} - no title found`);
+                            crawlerLog.debug(`Extracted data: ${JSON.stringify({title: data.title, company: data.company, desc: data.description_html ? 'yes' : 'no'})}`);
                             return;
                         }
 
                         // Final dedupe check
                         if (dedupe) {
                             if (seenUrls.has(item.url)) {
-                                crawlerLog.info(`Skipping duplicate ${item.url}`);
+                                crawlerLog.debug(`Skipping duplicate ${item.url}`);
                                 return;
                             }
                             seenUrls.add(item.url);
@@ -405,12 +432,12 @@ async function main() {
 
                         await Dataset.pushData(item);
                         saved++;
-                        crawlerLog.info(`Saved job #${saved}: ${item.title} at ${item.company || 'Unknown'}`);
+                        crawlerLog.info(`✓ SAVED #${saved}: "${item.title.substring(0, 50)}..." @ "${(item.company || 'N/A').substring(0, 30)}..."`);
                         
                         // Mark session as good on successful scrape
                         if (session) session.markGood();
                     } catch (err) {
-                        crawlerLog.error(`DETAIL ${request.url} failed: ${err.message}`);
+                        crawlerLog.error(`✗ DETAIL ERROR: ${request.url}\n${err.message}`);
                         if (session) session.markBad();
                     }
                 }
