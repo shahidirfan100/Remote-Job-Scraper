@@ -1,6 +1,15 @@
 {
   "keyword": "software engineer",
-  "location": "Toronto",
-  "results_wanted": 10,
-  "max_pages": 3
+  "location": "",
+  "category": "",
+  "results_wanted": 50,
+  "max_pages": 10,
+  "collectDetails": true,
+  "dedupe": true,
+  "minRequestDelay": 500,
+  "maxRequestDelay": 1500,
+  "proxyConfiguration": {
+    "useApifyProxy": true,
+    "apifyProxyGroups": ["RESIDENTIAL"]
+  }
 }

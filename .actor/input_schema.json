@@ -55,11 +55,11 @@
     "proxyConfiguration": {
       "title": "Proxy configuration",
       "type": "object",
-      "description": "Use Apify Proxy for the best results.",
+      "description": "Use Apify Proxy (datacenter recommended for Remote.co).",
       "editor": "proxy",
       "default": {
         "useApifyProxy": true,
-        "apifyProxyGroups": ["AUTO"]
+        "apifyProxyGroups": ["RESIDENTIAL"]
       }
     },
     "cookies": {
@@ -73,6 +73,29 @@
       "type": "string",
       "description": "Optional JSON-formatted cookies. Accepts an array (e.g., [{\"name\":\"a\",\"value\":\"1\"}]) or an object map (e.g., {\"a\":\"1\"}).",
       "editor": "textarea"
+    },
+    "dedupe": {
+      "title": "Deduplicate results",
+      "type": "boolean",
+      "description": "Remove duplicate job URLs from results (in-memory deduplication).",
+      "editor": "checkbox",
+      "default": true
+    },
+    "minRequestDelay": {
+      "title": "Minimum request delay (ms)",
+      "type": "integer",
+      "description": "Minimum delay between requests in milliseconds (for politeness and stealth).",
+      "minimum": 0,
+      "default": 500,
+      "editor": "number"
+    },
+    "maxRequestDelay": {
+      "title": "Maximum request delay (ms)",
+      "type": "integer",
+      "description": "Maximum delay between requests in milliseconds (random delays help avoid detection).",
+      "minimum": 0,
+      "default": 1500,
+      "editor": "number"
     }
   },
   "required": [],

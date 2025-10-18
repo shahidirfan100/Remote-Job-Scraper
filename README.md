@@ -1,48 +1,114 @@
-# Remote.co Jobs Scraper
+# Remote.co Jobs Scraper 🌐
 
-This Apify actor scrapes remote job listings from Remote.co using Crawlee's CheerioCrawler and gotScraping.
+A production-ready Apify actor that scrapes remote job listings from [Remote.co](https://remote.co/remote-jobs/search/) using **Crawlee's CheerioCrawler** and **gotScraping** for HTTP-based web scraping.
 
-## Features
+## Features ✨
 
-- Scrapes Remote.co search results and job detail pages (no browser required).
-- Prefers structured data (JSON-LD) where available, falls back to HTML parsing.
-- Handles pagination until the requested number of results is reached.
-- Optional detail scraping mode to fetch full job descriptions.
-- Saves results to an Apify dataset using a consistent schema.
+- **Stealth Scraping**: Realistic browser headers, session management, and proxy rotation to avoid detection
+- **Smart Pagination**: Automatically follows Remote.co's `?page=N` pagination until results quota is met
+- **JSON-LD Priority**: Extracts structured JobPosting data when available, with robust HTML fallbacks
+- **Flexible Input**: Search by keyword/location or provide direct Remote.co URLs
+- **Dataset Deduplication**: Built-in in-memory URL deduplication to prevent duplicate results
+- **Polite Crawling**: Configurable random delays between requests (500-1500ms default)
+- **No Browser Required**: Pure HTTP scraping using Crawlee + gotScraping stack
+- **Production-Ready**: Designed for Apify platform with full proxy support
 
-## Input
+## Input 📋
 
-The actor accepts the following input fields (all optional unless noted):
+All input fields are optional. The actor intelligently builds search URLs if you don't provide direct URLs.
 
-- `keyword` (string) — Job title or skill to search for. If omitted, the actor fetches general listings.
-- `location` (string) — Location filter (Remote.co listings are typically remote/global but this is kept for consistency).
-- `category` (string) — Job category to filter (if available on Remote.co).
-- `startUrl` / `url` / `startUrls` — Specific Remote.co search URL(s) to start from. If provided, these override keyword/location.
-- `results_wanted` (integer) — Maximum number of job listings to collect. Default: 100.
-- `max_pages` (integer) — Safety cap on number of listing pages to visit.
-- `collectDetails` (boolean) — If true, the actor will visit each job detail page to extract full description. Default: true.
-- `cookies` / `cookiesJson` — Optional cookies to include in requests.
-- `proxyConfiguration` — Proxy settings (use Apify Proxy for best results).
+### Search Parameters
+- **`keyword`** (string) — Job title or skill keywords (e.g., "Software Engineer", "Marketing Manager")
+- **`location`** (string) — Location filter (most Remote.co jobs are remote/global)
+- **`category`** (string) — Optional job category filter
+- **`startUrl`** / **`url`** / **`startUrls`** — Direct Remote.co search URLs (overrides keyword/location)
 
-## Output
+### Crawl Configuration
+- **`results_wanted`** (integer, default: `100`) — Maximum number of jobs to scrape
+- **`max_pages`** (integer, default: `20`) — Safety limit on pagination depth
+- **`collectDetails`** (boolean, default: `true`) — Visit detail pages for full descriptions
+- **`dedupe`** (boolean, default: `true`) — Remove duplicate job URLs
 
-Each item saved to the dataset follows this structure:
+### Stealth & Performance
+- **`minRequestDelay`** (integer, default: `500`) — Minimum delay between requests (ms)
+- **`maxRequestDelay`** (integer, default: `1500`) — Maximum delay between requests (ms)
+- **`proxyConfiguration`** (object) — **Residential proxies recommended** for Remote.co
+  ```json
+  {
+    "useApifyProxy": true,
+    "apifyProxyGroups": ["RESIDENTIAL"]
+  }
+  ```
 
-```
+### Advanced
+- **`cookies`** (string) — Raw cookie header string
+- **`cookiesJson`** (string) — JSON-formatted cookies (array or object)
+
+## Output 📦
+
+Each job is saved to the Apify dataset with the following schema:
+
+```json
 {
-	"title": "...",
-	"company": "...",
-	"category": "...",
-	"location": "...",
-	"date_posted": "...",
-	"description_html": "<p>...</p>",
-	"description_text": "Plain text version of description",
-	"url": "..."
+  "title": "Senior Software Engineer",
+  "company": "Acme Corp",
+  "category": "Engineering",
+  "location": "Remote, US National",
+  "date_posted": "2025-10-18T12:00:00Z",
+  "description_html": "<p>Full job description HTML...</p>",
+  "description_text": "Plain text version of description",
+  "url": "https://remote.co/job-details/senior-software-engineer-abc123"
 }
 ```
 
-## Notes
+## Example Usage 🚀
 
-- The actor uses CheerioCrawler with gotScraping; no additional local packages are required beyond those in package.json.
-- On Apify platform, provide `proxyConfiguration` and reasonable `results_wanted` to avoid rate limits.
-- If Remote.co changes their markup, selectors in `src/main.js` may need small updates.
+### Simple keyword search
+```json
+{
+  "keyword": "python developer",
+  "results_wanted": 50,
+  "collectDetails": true
+}
+```
+
+### Direct URL with custom delays
+```json
+{
+  "startUrl": "https://remote.co/remote-jobs/search?search_keywords=marketing",
+  "results_wanted": 100,
+  "minRequestDelay": 1000,
+  "maxRequestDelay": 2000
+}
+```
+
+## Technical Stack 🛠️
+
+- **Apify SDK** (`^3.4.5`) — Actor runtime and dataset management
+- **Crawlee** (`^3.14.1`) — CheerioCrawler for HTTP-based scraping
+- **Cheerio** (`^1.0.0-rc.12`) — Fast HTML parsing
+- **got-scraping** (`^4.0.3`) — HTTP client with stealth features
+
+## Best Practices 💡
+
+1. **Use Residential Proxies**: Remote.co may rate-limit datacenter IPs
+2. **Start Small**: Test with `results_wanted: 10` before scaling up
+3. **Monitor Sessions**: Check run logs for 403/429 errors and adjust delays
+4. **Enable Deduplication**: Keep `dedupe: true` to avoid duplicate jobs
+5. **Set Realistic Delays**: 500-1500ms per request is polite and effective
+
+## Stealth Features 🥷
+
+- Realistic Chrome 122 user-agent and browser headers
+- Session pooling with automatic rotation on errors
+- Random delays between requests (configurable)
+- Referer headers for detail pages
+- Cookie support for bypassing consent banners
+- Aggressive session retirement on 403/429 responses
+
+## Notes 📝
+
+- No local dependencies needed—runs directly on Apify platform
+- Selectors are tuned for Remote.co's structure as of October 2025
+- If Remote.co changes their HTML, selectors in `src/main.js` may need updates
+- The actor respects `robots.txt` and uses polite crawling delays
