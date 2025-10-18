@@ -207,6 +207,23 @@ async function main() {
                                 }
                             }
                             
+                            // Extract salary with multiple fallbacks
+                            let salary = null;
+                            if (e.baseSalary) {
+                                if (typeof e.baseSalary === 'object') {
+                                    // Try to get salary range or single value
+                                    if (e.baseSalary.currency && e.baseSalary.value) {
+                                        salary = `${e.baseSalary.currency} ${e.baseSalary.value}`;
+                                    } else if (e.baseSalary.currency && e.baseSalary.minValue && e.baseSalary.maxValue) {
+                                        salary = `${e.baseSalary.currency} ${e.baseSalary.minValue} - ${e.baseSalary.maxValue}`;
+                                    } else if (e.baseSalary.currency && e.baseSalary.price) {
+                                        salary = `${e.baseSalary.currency} ${e.baseSalary.price}`;
+                                    } else if (e.baseSalary.price) {
+                                        salary = e.baseSalary.price;
+                                    }
+                                }
+                            }
+                            
                             return {
                                 title: e.title || e.name || null,
                                 company: company,
@@ -214,6 +231,7 @@ async function main() {
                                 description_html: e.description ? cleanDescriptionHtml(e.description) : null,
                                 location: location,
                                 job_type: jobType,
+                                salary: salary,
                             };
                         }
                     }
@@ -579,6 +597,7 @@ async function main() {
                             category: data.category || null,
                             location: data.location || null,
                             date_posted: data.date_posted || null,
+                            salary: data.salary || null,
                             description_html: data.description_html || null,
                             description_text: data.description_text || null,
                             url: itemUrl || request.url,
