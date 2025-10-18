@@ -39,6 +39,91 @@ async function main() {
             return $.root().text().replace(/\s+/g, ' ').trim();
         };
 
+        const cleanDescriptionHtml = (html) => {
+            if (!html) return null;
+            const $ = cheerioLoad(html);
+            
+            // Remove script, style, and other non-content tags
+            $('script, style, noscript, iframe, svg, svg *').remove();
+            
+            // Remove divs that are just wrappers (keep content, remove the div)
+            $('div').each(function() {
+                const $div = $(this);
+                const classes = $div.attr('class') || '';
+                const id = $div.attr('id') || '';
+                
+                // Remove styled component divs (sc-* classes) but keep their content
+                if (classes.includes('sc-') && !id) {
+                    $div.replaceWith($div.html());
+                }
+            });
+            
+            // Remove all unwanted attributes from tags
+            $('*').each(function() {
+                const $elem = $(this);
+                const attrs = this.attribs || {};
+                
+                // Only keep safe attributes
+                const safeAttrs = ['href', 'src', 'alt', 'title'];
+                const keysToRemove = Object.keys(attrs).filter(k => !safeAttrs.includes(k));
+                
+                keysToRemove.forEach(k => {
+                    $elem.removeAttr(k);
+                });
+            });
+            
+            // Remove empty tags
+            let hasEmpty = true;
+            while (hasEmpty) {
+                const before = $('body').html();
+                $('*').each(function() {
+                    const $elem = $(this);
+                    if ($elem.text().trim() === '' && $elem.find('*').length === 0) {
+                        $elem.remove();
+                    }
+                });
+                const after = $('body').html();
+                hasEmpty = before !== after;
+            }
+            
+            // Get cleaned HTML
+            let result = $('body').html() || $.root().html();
+            
+            // Decode HTML entities: &#xa0; -> space, &#x24; -> $, &#x2013; -> -
+            result = result.replace(/&#x([0-9a-f]+);/gi, (match, hex) => {
+                try {
+                    return String.fromCharCode(parseInt(hex, 16));
+                } catch (e) {
+                    return match;
+                }
+            });
+            
+            // Decode named entities: &nbsp; -> space, &mdash; -> —
+            result = result.replace(/&([a-z]+);/gi, (match, entity) => {
+                const entities = {
+                    'nbsp': ' ',
+                    'amp': '&',
+                    'lt': '<',
+                    'gt': '>',
+                    'quot': '"',
+                    'apos': "'",
+                    'mdash': '\u2014',
+                    'ndash': '\u2013',
+                    'hellip': '\u2026',
+                    'ldquo': '\u201C',
+                    'rdquo': '\u201D',
+                    'lsquo': '\u2018',
+                    'rsquo': '\u2019'
+                };
+                return entities[entity.toLowerCase()] || match;
+            });
+            
+            // Clean up multiple spaces and newlines
+            result = result.replace(/\s+/g, ' ').trim();
+            
+            return result.length > 50 ? result : null;
+        };
+
         const buildStartUrl = (kw, loc, cat) => {
             let u = new URL('https://remote.co/remote-jobs/search/');
             if (kw && String(kw).trim()) u.searchParams.set('search_keywords', String(kw).trim());
@@ -87,12 +172,48 @@ async function main() {
                         if (!e) continue;
                         const t = e['@type'] || e.type;
                         if (t === 'JobPosting' || (Array.isArray(t) && t.includes('JobPosting'))) {
+                            // Extract location with multiple fallbacks
+                            let location = null;
+                            if (e.jobLocation) {
+                                if (Array.isArray(e.jobLocation)) {
+                                    const addr = e.jobLocation[0]?.address;
+                                    location = addr?.addressLocality || addr?.addressRegion || addr?.streetAddress || null;
+                                } else if (e.jobLocation.address) {
+                                    location = e.jobLocation.address.addressLocality || e.jobLocation.address.addressRegion || e.jobLocation.address.streetAddress || null;
+                                }
+                            }
+                            
+                            // Extract company with multiple fallbacks
+                            let company = null;
+                            if (e.hiringOrganization) {
+                                if (typeof e.hiringOrganization === 'string') {
+                                    company = e.hiringOrganization;
+                                } else if (typeof e.hiringOrganization === 'object') {
+                                    company = e.hiringOrganization.name || e.hiringOrganization.legalName || null;
+                                }
+                            }
+                            
+                            // Extract employment type and format it
+                            let jobType = null;
+                            if (e.employmentType) {
+                                if (Array.isArray(e.employmentType)) {
+                                    jobType = e.employmentType[0];
+                                } else {
+                                    jobType = e.employmentType;
+                                }
+                                if (jobType) {
+                                    // Convert FULL_TIME -> Full-Time
+                                    jobType = jobType.split('_').map(w => w.charAt(0) + w.slice(1).toLowerCase()).join('-');
+                                }
+                            }
+                            
                             return {
                                 title: e.title || e.name || null,
-                                company: e.hiringOrganization?.name || null,
+                                company: company,
                                 date_posted: e.datePosted || null,
-                                description_html: e.description || null,
-                                location: (e.jobLocation && e.jobLocation.address && (e.jobLocation.address.addressLocality || e.jobLocation.address.addressRegion)) || null,
+                                description_html: e.description ? cleanDescriptionHtml(e.description) : null,
+                                location: location,
+                                job_type: jobType,
                             };
                         }
                     }
@@ -399,8 +520,8 @@ async function main() {
                             if (data.location) crawlerLog.debug(`Found location: "${data.location}"`);
                         }
                         
-                        // JOB TYPE: Look for "Job Type" or "Job Schedule" in detail list
-                        let jobType = null;
+                        // JOB TYPE: Use from JSON-LD if available, otherwise extract from detail list
+                        let jobType = data.job_type || null;
                         if (!jobType) {
                             const detailItems = $('#detail-list-wrapper li');
                             for (let i = 0; i < detailItems.length; i++) {
@@ -437,14 +558,15 @@ async function main() {
                         if (!data.description_html) {
                             const aboutRole = $('#about-the-role-wrapper');
                             if (aboutRole.length > 0) {
-                                data.description_html = aboutRole.html();
+                                data.description_html = cleanDescriptionHtml(aboutRole.html());
                             } else {
-                                data.description_html = 
+                                const fallbackHtml = 
                                     $('.job-description').first().html() ||
                                     $('[class*="description"]').first().html() ||
                                     $('main').first().html() ||
                                     $('article').first().html() ||
                                     null;
+                                data.description_html = fallbackHtml ? cleanDescriptionHtml(fallbackHtml) : null;
                             }
                         }
                         data.description_text = data.description_html ? cleanText(data.description_html) : null;
