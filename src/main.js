@@ -62,6 +62,34 @@ await Actor.main(async () => {
         // Remove script, style, and other non-content tags
         $('script, style, noscript, iframe, svg, svg *').remove();
         
+        // Remove navigation, breadcrumbs, and UI elements
+        $('nav, header, footer, aside').remove();
+        $('[class*="breadcrumb"], [class*="navigation"]').remove();
+        $('button, [type="button"]').remove();
+        
+        // Remove specific unwanted content patterns
+        $('*').filter((i, el) => {
+            const text = $(el).text();
+            return text.includes('Join Remote.co to Unlock') || 
+                   text.includes('Find Your Next Remote Job') ||
+                   text.includes('Only hand-screened, legit jobs') ||
+                   text.includes('No ads, scams or junk');
+        }).remove();
+        
+        // Remove detail list items (they're already extracted separately)
+        $('#detail-list-wrapper, [class*="detail-list"]').remove();
+        $('ul li:has(p[class*="sc-hQNzwn"]), ul li:has(p[class*="sc-bGeIhM"])').remove();
+        
+        // Remove links to job categories (Date Posted, Location, etc. headers)
+        $('a[href*="/remote-jobs/"]').each(function() {
+            const $link = $(this);
+            const href = $link.attr('href') || '';
+            // Keep the link if it looks like a job posting, remove category links
+            if (href.match(/\/(business-development|consulting|operations|product-manager|project-manager|sales)/)) {
+                $link.remove();
+            }
+        });
+        
         // Remove divs that are just wrappers (keep content, remove the div)
         $('div').each(function() {
             const $div = $(this);
@@ -90,16 +118,18 @@ await Actor.main(async () => {
         
         // Remove empty tags
         let hasEmpty = true;
-        while (hasEmpty) {
+        let iterations = 0;
+        while (hasEmpty && iterations < 10) { // Limit iterations to prevent infinite loops
             const before = $('body').html();
             $('*').each(function() {
                 const $elem = $(this);
-                if ($elem.text().trim() === '' && $elem.find('*').length === 0) {
+                if ($elem.text().trim() === '' && $elem.find('img, iframe, video').length === 0) {
                     $elem.remove();
                 }
             });
             const after = $('body').html();
             hasEmpty = before !== after;
+            iterations++;
         }
         
         // Get cleaned HTML
@@ -503,6 +533,15 @@ await Actor.main(async () => {
                 try {
                     crawlerLog.info(`Processing DETAIL page: ${request.url}`);
                     
+                    // Check for login wall/paywall
+                    const hasLoginWall = $('*').text().includes('Join Remote.co to Unlock') || 
+                                        $('*').text().includes('Sign in to view') ||
+                                        $('button:contains("Find Your Next Remote Job")').length > 0;
+                    
+                    if (hasLoginWall) {
+                        crawlerLog.warning(`⚠ Login wall detected on ${request.url} - job description may be limited`);
+                    }
+                    
                     // Try JSON-LD first (most reliable)
                     const json = extractFromJsonLd($);
                     let data = json ? { ...json } : {};
@@ -609,19 +648,87 @@ await Actor.main(async () => {
                     data.category = categories.length > 0 ? categories.join(', ') : (category || null);
                     if (data.category) crawlerLog.debug(`Found category: "${data.category}"`);
                     
-                    // DESCRIPTION: Look for "About the Role" section
+                    // DESCRIPTION: Look for "About the Role" section with improved targeting
                     if (!data.description_html) {
-                        const aboutRole = $('#about-the-role-wrapper');
+                        // Strategy 1: Target the specific job description section
+                        let descHtml = null;
+                        
+                        // Try specific wrapper IDs/classes for job description
+                        const aboutRole = $('#about-the-role-wrapper, #job-description, .job-description-content');
                         if (aboutRole.length > 0) {
-                            data.description_html = cleanDescriptionHtml(aboutRole.html());
-                        } else {
-                            const fallbackHtml = 
-                                $('.job-description').first().html() ||
-                                $('[class*="description"]').first().html() ||
-                                $('main').first().html() ||
-                                $('article').first().html() ||
-                                null;
-                            data.description_html = fallbackHtml ? cleanDescriptionHtml(fallbackHtml) : null;
+                            // Clone to avoid modifying original
+                            const cloned = aboutRole.clone();
+                            
+                            // Remove unwanted sections that aren't part of the job description
+                            cloned.find('#detail-list-wrapper, .job-details-sidebar, nav, header, footer, [class*="breadcrumb"]').remove();
+                            cloned.find('button:contains("Find Your Next Remote Job")').closest('div').remove();
+                            cloned.find('div:contains("Join Remote.co to Unlock")').remove();
+                            
+                            descHtml = cloned.html();
+                        }
+                        
+                        // Strategy 2: Look for main content area, excluding sidebars
+                        if (!descHtml || descHtml.trim().length < 100) {
+                            // Find main content, excluding known sidebar elements
+                            const mainContent = $('main, article, [role="main"]').first();
+                            if (mainContent.length > 0) {
+                                const cloned = mainContent.clone();
+                                
+                                // Remove navigation, sidebars, and detail lists
+                                cloned.find('nav, aside, header, footer').remove();
+                                cloned.find('#detail-list-wrapper, .job-details-sidebar, [class*="sidebar"]').remove();
+                                cloned.find('[class*="breadcrumb"], [class*="navigation"]').remove();
+                                cloned.find('button, [class*="cta"], [class*="unlock"]').remove();
+                                cloned.find('ul li:has(p.sc-hQNzwn)').remove(); // Remove detail list items
+                                
+                                descHtml = cloned.html();
+                            }
+                        }
+                        
+                        // Strategy 3: Look for section headers that typically precede job descriptions
+                        if (!descHtml || descHtml.trim().length < 100) {
+                            const headers = $('h2, h3, h4').filter((i, el) => {
+                                const text = $(el).text().toLowerCase();
+                                return text.includes('about the role') || 
+                                       text.includes('job description') || 
+                                       text.includes('responsibilities') ||
+                                       text.includes('what you') ||
+                                       text.includes('position overview');
+                            });
+                            
+                            if (headers.length > 0) {
+                                const header = headers.first();
+                                // Get all siblings after the header until the next major section
+                                const siblings = header.nextAll().filter((i, el) => {
+                                    const tagName = $(el).prop('tagName');
+                                    // Stop at next major heading or sidebar
+                                    return !['H1', 'H2', 'ASIDE', 'NAV'].includes(tagName);
+                                });
+                                
+                                descHtml = header.prop('outerHTML') + siblings.map((i, el) => $(el).prop('outerHTML')).get().join('');
+                            }
+                        }
+                        
+                        // Strategy 4: Fallback - extract paragraphs from main content area
+                        if (!descHtml || descHtml.trim().length < 100) {
+                            const paragraphs = $('main p, article p, [class*="content"] p').filter((i, el) => {
+                                const text = $(el).text().trim();
+                                // Filter out short paragraphs and navigation text
+                                return text.length > 50 && 
+                                       !text.includes('Join Remote.co') &&
+                                       !text.includes('Find Your Next');
+                            });
+                            
+                            if (paragraphs.length > 0) {
+                                descHtml = paragraphs.map((i, el) => $(el).prop('outerHTML')).get().join('');
+                            }
+                        }
+                        
+                        data.description_html = descHtml ? cleanDescriptionHtml(descHtml) : null;
+                        
+                        // Log if description is still too short (likely failed to extract properly)
+                        if (!data.description_html || data.description_html.length < 100) {
+                            crawlerLog.warning(`⚠ Description extraction may have failed - only ${data.description_html?.length || 0} chars found`);
                         }
                     }
                     data.description_text = data.description_html ? cleanText(data.description_html) : null;
