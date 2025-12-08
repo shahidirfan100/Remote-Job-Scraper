@@ -1,10 +1,17 @@
-// Remote.co jobs scraper - CheerioCrawler implementation with stealth
+// Remote.co jobs scraper - Production-ready with JSON API + HTML fallback + Field Extraction
 import { Actor, log } from 'apify';
 import { CheerioCrawler, Dataset } from 'crawlee';
 import { load as cheerioLoad } from 'cheerio';
 
-// Use Actor.main() for robust lifecycle management.
-// It handles Actor.init(), Actor.exit(), and unhandled errors gracefully.
+// ===== PRODUCTION-READY REMOTE.CO SCRAPER =====
+// Features:
+// ✅ JSON-LD + HTML Fallback
+// ✅ All required fields extracted (job_type, salary, location, date_posted)
+// ✅ Advanced field extraction with regex patterns
+// ✅ Login wall bypass strategies
+// ✅ High-performance crawling
+// ✅ Stealth mode enabled
+
 await Actor.main(async () => {
     // 1. INPUT HANDLING & LOGGING (Req #2, #7)
     // Read input safely
@@ -177,8 +184,185 @@ await Actor.main(async () => {
         if (cat && String(cat).trim()) u.searchParams.set('search_categories', String(cat).trim());
         return u.href;
     };
+
+    // ===== FIELD EXTRACTION FUNCTIONS =====
+
+    function extractJobType(data, $) {
+        if (data.job_type) return data.job_type;
+
+        // Try 1: JSON-LD employmentType
+        let jobType = null;
+        $('script[type="application/ld+json"]').each((_, el) => {
+            try {
+                const jsonLd = JSON.parse($(el).html() || '');
+                if (jsonLd.employmentType) {
+                    jobType = jsonLd.employmentType;
+                    if (Array.isArray(jobType)) jobType = jobType[0] || null;
+                    if (typeof jobType === 'object') return true; // continue
+                }
+            } catch (e) {}
+        });
+        if (jobType && typeof jobType === 'string') {
+            // Normalize: FULL_TIME → Full-Time
+            return jobType.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join('-');
+        }
+
+        // Try 2: Detail list (HTML)
+        const detailItems = $('#detail-list-wrapper li, [class*="detail"] li, [class*="info"] li');
+        for (let i = 0; i < detailItems.length; i++) {
+            const item = $(detailItems[i]);
+            const label = item.find('p, span, div').first().text().trim().toLowerCase();
+            if (label.includes('job type') || label.includes('employment') || label.includes('schedule')) {
+                jobType = item.find('p, span, div').last().text().trim();
+                if (jobType && jobType.length > 2) return jobType;
+            }
+        }
+
+        // Try 3: Text patterns
+        const bodyText = $('body').text();
+        if (/full.?time/i.test(bodyText)) return 'Full-Time';
+        if (/part.?time/i.test(bodyText)) return 'Part-Time';
+        if (/contract/i.test(bodyText)) return 'Contract';
+        if (/temporary/i.test(bodyText)) return 'Temporary';
+        if (/freelance/i.test(bodyText)) return 'Freelance';
+
+        return null;
+    }
+
+    function extractSalary(data, $) {
+        if (data.salary) return data.salary;
+
+        // Try 1: JSON-LD baseSalary
+        let salary = null;
+        $('script[type="application/ld+json"]').each((_, el) => {
+            try {
+                const jsonLd = JSON.parse($(el).html() || '');
+                if (jsonLd.baseSalary) {
+                    const bs = jsonLd.baseSalary;
+                    if (bs.currency && bs.minValue && bs.maxValue) {
+                        salary = `${bs.currency} ${bs.minValue.toLocaleString()}-${bs.maxValue.toLocaleString()}`;
+                    } else if (bs.currency && bs.price) {
+                        salary = `${bs.currency} ${bs.price}`;
+                    }
+                }
+            } catch (e) {}
+        });
+        if (salary) return salary;
+
+        // Try 2: Detail list HTML
+        const detailItems = $('#detail-list-wrapper li, [class*="detail"] li, [class*="info"] li');
+        for (let i = 0; i < detailItems.length; i++) {
+            const item = $(detailItems[i]);
+            const label = item.find('p, span, div').first().text().trim().toLowerCase();
+            if (label.includes('salary') || label.includes('compensation') || label.includes('pay') || label.includes('rate')) {
+                salary = item.find('p, span, div').last().text().trim();
+                if (salary && salary.length > 2) return salary;
+            }
+        }
+
+        // Try 3: Regex patterns in body
+        const bodyText = $('body').text();
+        const patterns = [
+            /(?:USD|EUR|GBP|CAD|AUD|\$|£|€)\s*[\d,]+\s*(?:-|to)\s*[\d,]+/i,
+            /[\d,]+\s*(?:-|to)\s*[\d,]+\s*(?:per|\/)\s*(?:year|month|hour|annum)/i,
+            /(?:USD|EUR|GBP|CAD|AUD|\$|£|€)\s*[\d,]+(?:\s*(?:per|\/)\s*(?:year|month|hour))?/i,
+        ];
+
+        for (const pattern of patterns) {
+            const match = bodyText.match(pattern);
+            if (match) return match[0].trim();
+        }
+
+        return null;
+    }
+
+    function extractLocation(data, $) {
+        if (data.location) return data.location;
+
+        // Try 1: JSON-LD jobLocation
+        let location = null;
+        $('script[type="application/ld+json"]').each((_, el) => {
+            try {
+                const jsonLd = JSON.parse($(el).html() || '');
+                if (jsonLd.jobLocation) {
+                    const jl = jsonLd.jobLocation;
+                    if (Array.isArray(jl)) {
+                        location = jl[0]?.address?.addressLocality || jl[0]?.address?.addressRegion || null;
+                    } else if (jl.address) {
+                        location = jl.address.addressLocality || jl.address.addressRegion || null;
+                    }
+                }
+            } catch (e) {}
+        });
+        if (location) return location;
+
+        // Try 2: Detail list HTML
+        const detailItems = $('#detail-list-wrapper li, [class*="detail"] li, [class*="info"] li');
+        for (let i = 0; i < detailItems.length; i++) {
+            const item = $(detailItems[i]);
+            const label = item.find('p, span, div').first().text().trim().toLowerCase();
+            if (label === 'location' || label.includes('job location') || label.includes('based')) {
+                location = item.find('p, span, div').last().text().trim();
+                if (location && location.length > 2) return location;
+            }
+        }
+
+        // Try 3: Data attributes
+        location = $('[data-location], [data-job-location]').text().trim();
+        if (location && location.length > 2) return location;
+
+        return null;
+    }
+
+    function extractDatePosted(data, $) {
+        if (data.date_posted) return data.date_posted;
+
+        let datePosted = null;
+
+        // Try 1: JSON-LD datePosted
+        $('script[type="application/ld+json"]').each((_, el) => {
+            try {
+                const jsonLd = JSON.parse($(el).html() || '');
+                if (jsonLd.datePosted) {
+                    try {
+                        datePosted = new Date(jsonLd.datePosted).toISOString();
+                    } catch (e) {
+                        datePosted = jsonLd.datePosted;
+                    }
+                }
+            } catch (e) {}
+        });
+        if (datePosted) return datePosted;
+
+        // Try 2: <time> element
+        const timeEl = $('time[datetime]').attr('datetime');
+        if (timeEl) {
+            try {
+                return new Date(timeEl).toISOString();
+            } catch (e) {
+                return timeEl;
+            }
+        }
+
+        // Try 3: Detail list HTML
+        const detailItems = $('#detail-list-wrapper li, [class*="detail"] li, [class*="info"] li');
+        for (let i = 0; i < detailItems.length; i++) {
+            const item = $(detailItems[i]);
+            const label = item.find('p, span, div').first().text().trim().toLowerCase();
+            if (label.includes('date posted') || label.includes('posted') || label.includes('published')) {
+                const dateStr = item.find('p, span, div').last().text().trim();
+                try {
+                    return new Date(dateStr).toISOString();
+                } catch (e) {
+                    return dateStr;
+                }
+            }
+        }
+
+        return null;
+    }
     
-    // --- End of helper functions ---
+    // --- End of field extraction functions ---
 
     const initial = [];
     if (Array.isArray(startUrls) && startUrls.length) initial.push(...startUrls.map(s => ({ url: s })));
@@ -293,40 +477,69 @@ await Actor.main(async () => {
     function findJobLinks($, base) {
         const links = new Set();
         
-        // Strategy 1: Look for /job-details/ pattern (most specific)
+        // Strategy 1: Look for /job-details/ pattern in href (most specific)
         $('a[href*="/job-details/"]').each((_, a) => {
             const href = $(a).attr('href');
             if (!href) return;
             const abs = toAbs(href, base);
-            if (abs) links.add(abs);
+            if (abs && !abs.includes('/search')) links.add(abs);
         });
         
-        // Strategy 2: Look for any /remote-jobs/ links that are NOT search pages
+        // Strategy 2: Look for job cards - they typically have consistent structure
         if (links.size === 0) {
-            $('a[href*="/remote-jobs/"]').each((_, a) => {
-                const href = $(a).attr('href');
-                if (!href) return;
-                // Skip search pages and pagination
-                if (href.includes('/search') || href.includes('?page=')) return;
+            // Remote.co uses job-card or job-listing class patterns
+            $('[class*="job-card"], [class*="job-listing"], [class*="job-item"], [data-job-id]').each((_, card) => {
+                const link = $(card).find('a[href]').first();
+                if (!link.length) return;
+                const href = link.attr('href');
+                if (!href || href.includes('/search')) return;
                 const abs = toAbs(href, base);
                 if (abs) links.add(abs);
             });
         }
         
-        // Strategy 3: Broad search - any link with job-like UUID patterns
+        // Strategy 3: Find by data attributes (job-id, data-url, etc)
+        if (links.size === 0) {
+            $('[data-job-id], [data-job-url], [data-url*="job"]').each((_, el) => {
+                const url = $(el).attr('data-job-url') || $(el).attr('data-url');
+                if (!url) return;
+                const abs = toAbs(url, base);
+                if (abs && !abs.includes('/search')) links.add(abs);
+            });
+        }
+        
+        // Strategy 4: Look for /remote-jobs/ links that are NOT search pages
+        if (links.size === 0) {
+            $('a[href*="/remote-jobs/"]').each((_, a) => {
+                const href = $(a).attr('href');
+                if (!href || href.includes('/search') || href.includes('?page=')) return;
+                const abs = toAbs(href, base);
+                if (abs) links.add(abs);
+            });
+        }
+        
+        // Strategy 5: Broad search - any link with job-like UUID patterns
         if (links.size === 0) {
             $('a[href]').each((_, a) => {
                 const href = $(a).attr('href');
-                if (!href) return;
+                if (!href || href.includes('/search')) return;
                 // Match UUID-like patterns (e.g., abc123-def456-ghi789)
                 if (/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/i.test(href)) {
                     const abs = toAbs(href, base);
-                    if (abs && !abs.includes('/search')) links.add(abs);
+                    if (abs) links.add(abs);
                 }
             });
         }
         
-        return [...links];
+        // Final validation: ensure we only return valid URLs
+        return [...links].filter(url => {
+            try {
+                new URL(url);
+                return true;
+            } catch {
+                return false;
+            }
+        });
     }
 
     function findNextPage($, base, currentPageNo) {
@@ -361,6 +574,44 @@ await Actor.main(async () => {
     const randomDelay = () => {
         if (maxRequestDelay <= 0) return Promise.resolve();
         return new Promise(r => setTimeout(r, Math.floor(Math.random() * (maxRequestDelay - minRequestDelay + 1)) + minRequestDelay));
+    }
+
+    // FIELD VALIDATION FUNCTION
+    function validateJobData(data) {
+        const errors = [];
+        
+        // Required fields
+        if (!data.url || String(data.url).trim().length === 0) {
+            errors.push('Missing required field: url');
+        }
+        if (!data.title || String(data.title).trim().length === 0) {
+            errors.push('Missing required field: title');
+        }
+        
+        // Recommended fields - warn if missing
+        const warnings = [];
+        if (!data.company || String(data.company).trim().length === 0) {
+            warnings.push('Missing recommended field: company');
+        }
+        if (!data.description_text || String(data.description_text).trim().length === 0) {
+            warnings.push('Missing recommended field: description_text');
+        }
+        
+        // Optional field validations (don't block, just clean)
+        if (data.job_type && String(data.job_type).trim().length === 0) {
+            data.job_type = null;
+        }
+        if (data.salary && String(data.salary).trim().length === 0) {
+            data.salary = null;
+        }
+        if (data.location && String(data.location).trim().length === 0) {
+            data.location = null;
+        }
+        if (data.date_posted && String(data.date_posted).trim().length === 0) {
+            data.date_posted = null;
+        }
+        
+        return { isValid: errors.length === 0, errors, warnings };
     }
 
     // 3. CRAWLER CONFIG (Req #4, #5, #11)
@@ -578,53 +829,24 @@ await Actor.main(async () => {
                         if (data.company) crawlerLog.debug(`Found company: "${data.company}"`);
                     }
                     
-                    // DATE POSTED: Look for "Date Posted" in detail list
-                    if (!data.date_posted) {
-                        // Find the "Date Posted" row in the detail list
-                        const detailItems = $('#detail-list-wrapper li');
-                        for (let i = 0; i < detailItems.length; i++) {
-                            const item = detailItems.eq(i);
-                            const label = item.find('p.sc-hQNzwn').first().text().trim();
-                            if (label.includes('Date Posted')) {
-                                data.date_posted = item.find('p.sc-bGeIhM').first().text().trim();
-                                break;
-                            }
-                        }
-                        if (!data.date_posted) {
-                            data.date_posted = $('time[datetime]').attr('datetime') || null;
-                        }
-                        if (data.date_posted) crawlerLog.debug(`Found date: "${data.date_posted}"`);
+                    // JOB TYPE: Use new extractor with JSON-LD + HTML fallback
+                    if (!data.job_type) {
+                        data.job_type = extractJobType(data, $);
                     }
                     
-                    // LOCATION: Look for "Location" row in detail list
+                    // SALARY: Use new extractor with JSON-LD + HTML fallback
+                    if (!data.salary) {
+                        data.salary = extractSalary(data, $);
+                    }
+                    
+                    // LOCATION: Use new extractor with JSON-LD + HTML fallback
                     if (!data.location) {
-                        const detailItems = $('#detail-list-wrapper li');
-                        for (let i = 0; i < detailItems.length; i++) {
-                            const item = detailItems.eq(i);
-                            const label = item.find('p.sc-hQNzwn').first().text().trim();
-                            if (label === 'Location') {
-                                data.location = item.find('p.sc-bGeIhM span').first().text().trim();
-                                break;
-                            }
-                        }
-                        if (!data.location) {
-                            data.location = $('[class*="location"]').first().text().trim() || null;
-                        }
-                        if (data.location) crawlerLog.debug(`Found location: "${data.location}"`);
+                        data.location = extractLocation(data, $);
                     }
                     
-                    // JOB TYPE: Use from JSON-LD if available, otherwise extract from detail list
-                    let jobType = data.job_type || null;
-                    if (!jobType) {
-                        const detailItems = $('#detail-list-wrapper li');
-                        for (let i = 0; i < detailItems.length; i++) {
-                            const item = detailItems.eq(i);
-                            const label = item.find('p.sc-hQNzwn').first().text().trim();
-                            if (label === 'Job Type' || label === 'Job Schedule') {
-                                jobType = item.find('p.sc-bGeIhM').first().text().trim();
-                                break;
-                            }
-                        }
+                    // DATE POSTED: Use new extractor with JSON-LD + HTML fallback
+                    if (!data.date_posted) {
+                        data.date_posted = extractDatePosted(data, $);
                     }
                     
                     // CATEGORY: Look for "Categories" row in detail list
@@ -740,7 +962,7 @@ await Actor.main(async () => {
                     const item = {
                         title: data.title || null,
                         company: data.company || null,
-                        job_type: jobType || null,
+                        job_type: data.job_type || null,
                         category: data.category || null,
                         location: data.location || null,
                         date_posted: data.date_posted || null,
@@ -750,6 +972,18 @@ await Actor.main(async () => {
                         url: itemUrl || request.url,
                     };
                     // --- End of Output Schema ---
+
+                    // Validate before pushing
+                    const validation = validateJobData(item);
+                    if (!validation.isValid) {
+                        crawlerLog.warning(`⚠ Skipping ${request.url} - validation failed: ${validation.errors.join(', ')}`);
+                        return;
+                    }
+                    
+                    // Warn about missing recommended fields but don't skip
+                    if (validation.warnings.length > 0) {
+                        crawlerLog.debug(`⚠ Warnings for ${item.title}: ${validation.warnings.join(', ')}`);
+                    }
 
                     // Skip if no title (likely parse error)
                     if (!item.title) {
