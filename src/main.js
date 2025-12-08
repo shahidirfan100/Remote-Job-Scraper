@@ -771,53 +771,45 @@ await Actor.main(async () => {
 
                 if (collectDetails) {
                     if (toEnqueue.length > 0) {
-                        crawlerLog.info(`Enqueueing ${toEnqueue.length} job detail pages`);
                         try {
-                            // Enqueue all detail pages at once by using urls array
-                            // userData will be applied to all URLs, so we enqueue each with its userData
                             for (const req of toEnqueue) {
                                 await enqueueLinks({ urls: [req.url], userData: req.userData });
                             }
                         } catch (err) {
-                            crawlerLog.error(`Failed to enqueue detail links: ${err.message}`);
+                            crawlerLog.error(`❌ Failed to enqueue jobs: ${err.message}`);
                         }
                     } else {
-                        crawlerLog.warning(`No new job links to enqueue (dedupe filtered all)`);
+                        const toPush = toEnqueue.map(r => ({ url: r.url, _source: 'remote.co' }));
+                        if (toPush.length) {
+                            await Dataset.pushData(toPush);
+                            saved += toPush.length;
+                            crawlerLog.info(`Saved ${toPush.length} job URLs (total: ${saved})`);
+                        }
                     }
-                } else {
-                    const toPush = toEnqueue.map(r => ({ url: r.url, _source: 'remote.co' }));
-                    if (toPush.length) {
-                        await Dataset.pushData(toPush);
-                        saved += toPush.length;
-                        crawlerLog.info(`Saved ${toPush.length} job URLs (total: ${saved})`);
-                    }
-                }
 
-                // --- Pagination Stop Logic (Req #3) ---
-                // Your existing logic, which respects MAX_PAGES and RESULTS_WANTED
-                const shouldPaginate = collectDetails
-                    ? (pageNo < MAX_PAGES && toEnqueue.length > 0)
-                    : (saved < RESULTS_WANTED && pageNo < MAX_PAGES);
+                    // --- Pagination Stop Logic (Req #3) ---
+                    // Your existing logic, which respects MAX_PAGES and RESULTS_WANTED
+                    const shouldPaginate = collectDetails
+                        ? (pageNo < MAX_PAGES && toEnqueue.length > 0)
+                        : (saved < RESULTS_WANTED && pageNo < MAX_PAGES);
 
-                if (shouldPaginate) {
-                    const next = findNextPage($, request.url, pageNo);
-                    if (next) {
-                        crawlerLog.info(`Enqueueing next page ${pageNo + 1}: ${next}`);
-                        try {
-                            await enqueueLinks({ urls: [next], userData: { label: 'LIST', pageNo: pageNo + 1 } });
-                        } catch (err) {
-                            crawlerLog.error(`Failed to enqueue next page: ${err.message}`);
+                    if (shouldPaginate) {
+                        const next = findNextPage($, request.url, pageNo);
+                        if (next) {
+                            crawlerLog.info(`Enqueueing next page ${pageNo + 1}: ${next}`);
+                            try {
+                                await enqueueLinks({ urls: [next], userData: { label: 'LIST', pageNo: pageNo + 1 } });
+                            } catch (err) {
+                                crawlerLog.error(`Failed to enqueue next page: ${err.message}`);
+                            }
+                        } else {
+                            crawlerLog.info(`No next page found, stopping pagination at page ${pageNo}`);
                         }
                     } else {
-                        crawlerLog.info(`No next page found, stopping pagination at page ${pageNo}`);
+                        crawlerLog.info(`Pagination stopped: collectDetails=${collectDetails}, saved=${saved}/${RESULTS_WANTED}, page=${pageNo}/${MAX_PAGES}`);
                     }
-                } else {
-                    crawlerLog.info(`Pagination stopped: collectDetails=${collectDetails}, saved=${saved}/${RESULTS_WANTED}, page=${pageNo}/${MAX_PAGES}`);
                 }
-                return;
-            }
-
-            if (label === 'DETAIL') {
+            } else if (label === 'DETAIL') {
                 // --- Stop Condition Logic (Req #3) ---
                 // Your existing logic to skip processing if limit is met
                 if (saved >= RESULTS_WANTED) {
@@ -914,8 +906,6 @@ await Actor.main(async () => {
                             break;
                         }
                     }
-                    data.category = categories.length > 0 ? categories.join(', ') : (category || null);
-                    if (data.category) crawlerLog.debug(`Found category: "${data.category}"`);
 
                     // DESCRIPTION: Look for "About the Role" section with improved targeting
                     if (!data.description_html) {
@@ -994,11 +984,6 @@ await Actor.main(async () => {
                         }
 
                         data.description_html = descHtml ? cleanDescriptionHtml(descHtml) : null;
-
-                        // Log if description is still too short (likely failed to extract properly)
-                        if (!data.description_html || data.description_html.length < 100) {
-                            crawlerLog.warning(`⚠ Description extraction may have failed - only ${data.description_html?.length || 0} chars found`);
-                        }
                     }
                     data.description_text = data.description_html ? cleanText(data.description_html) : null;
                     // --- End of HTML selector logic ---
@@ -1032,29 +1017,16 @@ await Actor.main(async () => {
                         crawlerLog.debug(`⚠ Warnings for ${item.title}: ${validation.warnings.join(', ')}`);
                     }
 
-                    // SKIP JOBS BEHIND LOGIN WALL IF DATA IS INSUFFICIENT
-                    // Requirements: Must have title AND (company OR description)
+
+                    // Validate - must have title
                     if (!item.title) {
-                        crawlerLog.warning(`⚠ Skipping ${request.url} - no title found (likely behind login wall)`);
-                        crawlerLog.debug(`Extracted data: ${JSON.stringify({ title: data.title, company: data.company, desc: data.description_html ? 'yes' : 'no' })}`);
+                        crawlerLog.warning(`⚠ Skipped: No title`);
                         return;
                     }
 
-                    // If login wall detected AND no meaningful description, skip this job
-                    if (hasLoginWall && (!item.description_text || item.description_text.length < 100)) {
-                        crawlerLog.warning(`⚠ Skipping ${request.url} - insufficient data (behind login wall, description < 100 chars)`);
-                        crawlerLog.debug(`Login wall job - title: "${item.title}", desc length: ${item.description_text?.length || 0}`);
-                        return; // SKIP this job entirely
-                    }
-
                     // Final dedupe check
-                    if (dedupe) {
-                        if (seenUrls.has(item.url)) {
-                            crawlerLog.debug(`Skipping duplicate ${item.url}`);
-                            return;
-                        }
-                        seenUrls.add(item.url);
-                    }
+                    if (dedupe && seenUrls.has(item.url)) return;
+                    if (dedupe) seenUrls.add(item.url);
 
                     // --- Async Correctness (Req #9) ---
                     // Your existing await for pushData is correct
@@ -1065,7 +1037,7 @@ await Actor.main(async () => {
                     // Mark session as good on successful scrape
                     if (session) session.markGood();
                 } catch (err) {
-                    crawlerLog.error(`✗ DETAIL ERROR: ${request.url}\n${err.message}`);
+                    crawlerLog.error(`❌ Error: ${err.message}`);
                     if (session) session.markBad();
                 }
             }
