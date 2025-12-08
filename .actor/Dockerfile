@@ -1,16 +1,14 @@
-FROM alpine:latest
+# Use official Apify base image with Node.js 22 for production compatibility
+FROM apify/actor-node:22
 
-RUN apk add --no-cache nodejs npm
+# Copy package files
+COPY package*.json ./
 
-RUN addgroup app && adduser app -G app -D
-WORKDIR /home/app
-USER app
+# Install dependencies (Apify base image handles this efficiently)
+RUN npm install --only=production --no-audit
 
-COPY --chown=app:app package*.json ./
-RUN npm i --omit=dev && rm -r ~/.npm || true
+# Copy source code
+COPY . ./
 
-COPY --chown=app:app . ./
-
-ENV APIFY_LOG_LEVEL=ERROR
-
-CMD npm start --silent
+# Run the actor
+CMD npm start

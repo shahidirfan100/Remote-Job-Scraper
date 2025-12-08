@@ -50,7 +50,7 @@ await Actor.main(async () => {
             const nu = new URL(u);
             // remove fragments and common tracking params
             nu.hash = '';
-            ['utm_source','utm_medium','utm_campaign','utm_term','utm_content','fbclid'].forEach(p => nu.searchParams.delete(p));
+            ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'fbclid'].forEach(p => nu.searchParams.delete(p));
             return nu.href;
         } catch { return u; }
     };
@@ -65,30 +65,30 @@ await Actor.main(async () => {
     const cleanDescriptionHtml = (html) => {
         if (!html) return null;
         const $ = cheerioLoad(html);
-        
+
         // Remove script, style, and other non-content tags
         $('script, style, noscript, iframe, svg, svg *').remove();
-        
+
         // Remove navigation, breadcrumbs, and UI elements
         $('nav, header, footer, aside').remove();
         $('[class*="breadcrumb"], [class*="navigation"]').remove();
         $('button, [type="button"]').remove();
-        
+
         // Remove specific unwanted content patterns
         $('*').filter((i, el) => {
             const text = $(el).text();
-            return text.includes('Join Remote.co to Unlock') || 
-                   text.includes('Find Your Next Remote Job') ||
-                   text.includes('Only hand-screened, legit jobs') ||
-                   text.includes('No ads, scams or junk');
+            return text.includes('Join Remote.co to Unlock') ||
+                text.includes('Find Your Next Remote Job') ||
+                text.includes('Only hand-screened, legit jobs') ||
+                text.includes('No ads, scams or junk');
         }).remove();
-        
+
         // Remove detail list items (they're already extracted separately)
         $('#detail-list-wrapper, [class*="detail-list"]').remove();
         $('ul li:has(p[class*="sc-hQNzwn"]), ul li:has(p[class*="sc-bGeIhM"])').remove();
-        
+
         // Remove links to job categories (Date Posted, Location, etc. headers)
-        $('a[href*="/remote-jobs/"]').each(function() {
+        $('a[href*="/remote-jobs/"]').each(function () {
             const $link = $(this);
             const href = $link.attr('href') || '';
             // Keep the link if it looks like a job posting, remove category links
@@ -96,39 +96,39 @@ await Actor.main(async () => {
                 $link.remove();
             }
         });
-        
+
         // Remove divs that are just wrappers (keep content, remove the div)
-        $('div').each(function() {
+        $('div').each(function () {
             const $div = $(this);
             const classes = $div.attr('class') || '';
             const id = $div.attr('id') || '';
-            
+
             // Remove styled component divs (sc-* classes) but keep their content
             if (classes.includes('sc-') && !id) {
                 $div.replaceWith($div.html());
             }
         });
-        
+
         // Remove all unwanted attributes from tags
-        $('*').each(function() {
+        $('*').each(function () {
             const $elem = $(this);
             const attrs = this.attribs || {};
-            
+
             // Only keep safe attributes
             const safeAttrs = ['href', 'src', 'alt', 'title'];
             const keysToRemove = Object.keys(attrs).filter(k => !safeAttrs.includes(k));
-            
+
             keysToRemove.forEach(k => {
                 $elem.removeAttr(k);
             });
         });
-        
+
         // Remove empty tags
         let hasEmpty = true;
         let iterations = 0;
         while (hasEmpty && iterations < 10) { // Limit iterations to prevent infinite loops
             const before = $('body').html();
-            $('*').each(function() {
+            $('*').each(function () {
                 const $elem = $(this);
                 if ($elem.text().trim() === '' && $elem.find('img, iframe, video').length === 0) {
                     $elem.remove();
@@ -138,10 +138,10 @@ await Actor.main(async () => {
             hasEmpty = before !== after;
             iterations++;
         }
-        
+
         // Get cleaned HTML
         let result = $('body').html() || $.root().html();
-        
+
         // Decode HTML entities: &#xa0; -> space, &#x24; -> $, &#x2013; -> -
         result = result.replace(/&#x([0-9a-f]+);/gi, (match, hex) => {
             try {
@@ -150,7 +150,7 @@ await Actor.main(async () => {
                 return match;
             }
         });
-        
+
         // Decode named entities: &nbsp; -> space, &mdash; -> —
         result = result.replace(/&([a-z]+);/gi, (match, entity) => {
             const entities = {
@@ -170,10 +170,10 @@ await Actor.main(async () => {
             };
             return entities[entity.toLowerCase()] || match;
         });
-        
+
         // Clean up multiple spaces and newlines
         result = result.replace(/\s+/g, ' ').trim();
-        
+
         return result.length > 50 ? result : null;
     };
 
@@ -200,7 +200,7 @@ await Actor.main(async () => {
                     if (Array.isArray(jobType)) jobType = jobType[0] || null;
                     if (typeof jobType === 'object') return true; // continue
                 }
-            } catch (e) {}
+            } catch (e) { }
         });
         if (jobType && typeof jobType === 'string') {
             // Normalize: FULL_TIME → Full-Time
@@ -218,13 +218,20 @@ await Actor.main(async () => {
             }
         }
 
-        // Try 3: Text patterns
+        // Try 3: Text patterns with better regex
         const bodyText = $('body').text();
-        if (/full.?time/i.test(bodyText)) return 'Full-Time';
-        if (/part.?time/i.test(bodyText)) return 'Part-Time';
-        if (/contract/i.test(bodyText)) return 'Contract';
-        if (/temporary/i.test(bodyText)) return 'Temporary';
-        if (/freelance/i.test(bodyText)) return 'Freelance';
+        const patterns = [
+            { regex: /\b(full.?time)\b/i, value: 'Full-Time' },
+            { regex: /\b(part.?time)\b/i, value: 'Part-Time' },
+            { regex: /\b(contract|contractor)\b/i, value: 'Contract' },
+            { regex: /\b(temporary|temp)\b/i, value: 'Temporary' },
+            { regex: /\b(freelance|freelancer)\b/i, value: 'Freelance' },
+            { regex: /\b(internship|intern)\b/i, value: 'Internship' },
+        ];
+
+        for (const { regex, value } of patterns) {
+            if (regex.test(bodyText)) return value;
+        }
 
         return null;
     }
@@ -245,7 +252,7 @@ await Actor.main(async () => {
                         salary = `${bs.currency} ${bs.price}`;
                     }
                 }
-            } catch (e) {}
+            } catch (e) { }
         });
         if (salary) return salary;
 
@@ -292,7 +299,7 @@ await Actor.main(async () => {
                         location = jl.address.addressLocality || jl.address.addressRegion || null;
                     }
                 }
-            } catch (e) {}
+            } catch (e) { }
         });
         if (location) return location;
 
@@ -330,7 +337,7 @@ await Actor.main(async () => {
                         datePosted = jsonLd.datePosted;
                     }
                 }
-            } catch (e) {}
+            } catch (e) { }
         });
         if (datePosted) return datePosted;
 
@@ -359,9 +366,36 @@ await Actor.main(async () => {
             }
         }
 
+        // Try 4: Parse relative dates ("Posted 2 days ago", "Updated 1 week ago")
+        const bodyText = $('body').text();
+        const relativePattern = /posted\s+(\d+)\s+(day|week|month|hour)s?\s+ago/i;
+        const match = bodyText.match(relativePattern);
+        if (match) {
+            const amount = parseInt(match[1]);
+            const unit = match[2].toLowerCase();
+            const now = new Date();
+
+            switch (unit) {
+                case 'hour':
+                    now.setHours(now.getHours() - amount);
+                    break;
+                case 'day':
+                    now.setDate(now.getDate() - amount);
+                    break;
+                case 'week':
+                    now.setDate(now.getDate() - (amount * 7));
+                    break;
+                case 'month':
+                    now.setMonth(now.getMonth() - amount);
+                    break;
+            }
+
+            return now.toISOString();
+        }
+
         return null;
     }
-    
+
     // --- End of field extraction functions ---
 
     const initial = [];
@@ -369,7 +403,7 @@ await Actor.main(async () => {
     if (startUrl) initial.push({ url: startUrl });
     if (url) initial.push({ url });
     if (!initial.length) initial.push({ url: buildStartUrl(keyword, location, category) });
-    
+
     log.info(`Starting with URLs: ${initial.map(i => i.url).join(', ')}`);
 
     // 2. PROXY CONFIGURATION (Req #6)
@@ -416,7 +450,7 @@ await Actor.main(async () => {
                                 location = e.jobLocation.address.addressLocality || e.jobLocation.address.addressRegion || e.jobLocation.address.streetAddress || null;
                             }
                         }
-                        
+
                         // Extract company with multiple fallbacks
                         let company = null;
                         if (e.hiringOrganization) {
@@ -426,7 +460,7 @@ await Actor.main(async () => {
                                 company = e.hiringOrganization.name || e.hiringOrganization.legalName || null;
                             }
                         }
-                        
+
                         // Extract employment type and format it
                         let jobType = null;
                         if (e.employmentType) {
@@ -440,7 +474,7 @@ await Actor.main(async () => {
                                 jobType = jobType.split('_').map(w => w.charAt(0) + w.slice(1).toLowerCase()).join('-');
                             }
                         }
-                        
+
                         // Extract salary with multiple fallbacks
                         let salary = null;
                         if (e.baseSalary) {
@@ -457,7 +491,7 @@ await Actor.main(async () => {
                                 }
                             }
                         }
-                        
+
                         return {
                             title: e.title || e.name || null,
                             company: company,
@@ -476,16 +510,25 @@ await Actor.main(async () => {
 
     function findJobLinks($, base) {
         const links = new Set();
-        
-        // Strategy 1: Look for /job-details/ pattern in href (most specific)
+
+        // Strategy 1: Remote.co specific selectors (found via browser analysis)
+        // Links typically have classes like 'sc-hJLWjl fDJthH' or similar styled-components patterns
+        $('a.sc-hJLWjl, a.fDJthH, a[class*="sc-"][href*="/job-details/"]').each((_, a) => {
+            const href = $(a).attr('href');
+            if (!href) return;
+            const abs = toAbs(href, base);
+            if (abs && abs.includes('/job-details/')) links.add(abs);
+        });
+
+        // Strategy 2: Look for /job-details/ pattern in href (most specific)
         $('a[href*="/job-details/"]').each((_, a) => {
             const href = $(a).attr('href');
             if (!href) return;
             const abs = toAbs(href, base);
             if (abs && !abs.includes('/search')) links.add(abs);
         });
-        
-        // Strategy 2: Look for job cards - they typically have consistent structure
+
+        // Strategy 3: Look for job cards - they typically have consistent structure
         if (links.size === 0) {
             // Remote.co uses job-card or job-listing class patterns
             $('[class*="job-card"], [class*="job-listing"], [class*="job-item"], [data-job-id]').each((_, card) => {
@@ -497,8 +540,8 @@ await Actor.main(async () => {
                 if (abs) links.add(abs);
             });
         }
-        
-        // Strategy 3: Find by data attributes (job-id, data-url, etc)
+
+        // Strategy 4: Find by data attributes (job-id, data-url, etc)
         if (links.size === 0) {
             $('[data-job-id], [data-job-url], [data-url*="job"]').each((_, el) => {
                 const url = $(el).attr('data-job-url') || $(el).attr('data-url');
@@ -507,8 +550,8 @@ await Actor.main(async () => {
                 if (abs && !abs.includes('/search')) links.add(abs);
             });
         }
-        
-        // Strategy 4: Look for /remote-jobs/ links that are NOT search pages
+
+        // Strategy 5: Look for /remote-jobs/ links that are NOT search pages
         if (links.size === 0) {
             $('a[href*="/remote-jobs/"]').each((_, a) => {
                 const href = $(a).attr('href');
@@ -517,8 +560,8 @@ await Actor.main(async () => {
                 if (abs) links.add(abs);
             });
         }
-        
-        // Strategy 5: Broad search - any link with job-like UUID patterns
+
+        // Strategy 6: Broad search - any link with job-like UUID patterns
         if (links.size === 0) {
             $('a[href]').each((_, a) => {
                 const href = $(a).attr('href');
@@ -530,7 +573,7 @@ await Actor.main(async () => {
                 }
             });
         }
-        
+
         // Final validation: ensure we only return valid URLs
         return [...links].filter(url => {
             try {
@@ -547,7 +590,7 @@ await Actor.main(async () => {
         // Try to find explicit next page link first
         const rel = $('a[rel="next"]').attr('href');
         if (rel) return toAbs(rel, base);
-        
+
         // Look for page links in pagination - find the next sequential page
         const nextPageNum = currentPageNo + 1;
         let nextLink = null;
@@ -560,7 +603,7 @@ await Actor.main(async () => {
             }
         });
         if (nextLink) return toAbs(nextLink, base);
-        
+
         // Manual construction: increment page param
         try {
             const currentUrl = new URL(base);
@@ -579,7 +622,7 @@ await Actor.main(async () => {
     // FIELD VALIDATION FUNCTION
     function validateJobData(data) {
         const errors = [];
-        
+
         // Required fields
         if (!data.url || String(data.url).trim().length === 0) {
             errors.push('Missing required field: url');
@@ -587,7 +630,7 @@ await Actor.main(async () => {
         if (!data.title || String(data.title).trim().length === 0) {
             errors.push('Missing required field: title');
         }
-        
+
         // Recommended fields - warn if missing
         const warnings = [];
         if (!data.company || String(data.company).trim().length === 0) {
@@ -596,7 +639,7 @@ await Actor.main(async () => {
         if (!data.description_text || String(data.description_text).trim().length === 0) {
             warnings.push('Missing recommended field: description_text');
         }
-        
+
         // Optional field validations (don't block, just clean)
         if (data.job_type && String(data.job_type).trim().length === 0) {
             data.job_type = null;
@@ -610,7 +653,7 @@ await Actor.main(async () => {
         if (data.date_posted && String(data.date_posted).trim().length === 0) {
             data.date_posted = null;
         }
-        
+
         return { isValid: errors.length === 0, errors, warnings };
     }
 
@@ -620,12 +663,12 @@ await Actor.main(async () => {
         proxyConfiguration: proxyConf,
         maxRequestRetries: 5,
         useSessionPool: true,
-        sessionPoolOptions: { 
-            maxPoolSize: 50, 
-            sessionOptions: { 
+        sessionPoolOptions: {
+            maxPoolSize: 50,
+            sessionOptions: {
                 maxUsageCount: 30,
-                maxErrorScore: 3 
-            } 
+                maxErrorScore: 3
+            }
         },
         maxConcurrency: 10, // <-- SET TO 10 AS REQUESTED
         requestHandlerTimeoutSecs: 120,
@@ -636,26 +679,26 @@ await Actor.main(async () => {
                 gotOptions.headers = {
                     'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
                     'accept-language': 'en-US,en;q=0.9',
-                    'accept-encoding': 'gzip, deflate, br',
+                    'accept-encoding': 'gzip, deflate, br, zstd',
                     'cache-control': 'no-cache',
                     'pragma': 'no-cache',
-                    'sec-ch-ua': '"Google Chrome";v="129", "Not(A:Brand";v="8", "Chromium";v="129"', // <-- UPDATED HEADER
+                    'sec-ch-ua': '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
                     'sec-ch-ua-mobile': '?0',
-                    'sec-ch-ua-platform': '"Windows"', // <-- UPDATED HEADER
+                    'sec-ch-ua-platform': '"Windows"',
                     'sec-fetch-dest': 'document',
                     'sec-fetch-mode': 'navigate',
                     'sec-fetch-site': 'none',
                     'sec-fetch-user': '?1',
                     'upgrade-insecure-requests': '1',
-                    'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36', // <-- UPDATED UA
+                    'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
                     ...gotOptions.headers,
                 };
-                
+
                 // Add custom cookies if provided
                 if (customCookies) {
                     gotOptions.headers['cookie'] = customCookies;
                 }
-                
+
                 // Add referer for detail pages
                 if (request.userData?.label === 'DETAIL') {
                     gotOptions.headers['referer'] = 'https://remote.co/remote-jobs/search/';
@@ -682,17 +725,17 @@ await Actor.main(async () => {
 
             // polite random delay (will be 0ms if inputs are 0)
             await randomDelay();
-            
+
             crawlerLog.info(`Processing ${label} page: ${request.url}`);
 
             if (label === 'LIST') {
                 // Debug: log page structure
                 const allLinks = $('a[href]').length;
                 crawlerLog.info(`Total links on page: ${allLinks}`);
-                
+
                 const links = findJobLinks($, request.url);
                 crawlerLog.info(`LIST page ${pageNo} -> found ${links.length} job links`);
-                
+
                 // Log first few links for debugging
                 if (links.length > 0) {
                     crawlerLog.info(`Sample job links: ${links.slice(0, 3).join(', ')}`);
@@ -708,7 +751,7 @@ await Actor.main(async () => {
 
                 // normalize and dedupe links
                 const normalized = links.map(normalizeUrl).filter(Boolean).filter((u, i, arr) => arr.indexOf(u) === i);
-                
+
                 // --- Stop Condition Logic (Req #3) ---
                 // This is your existing logic, which already respects RESULTS_WANTED
                 const remaining = Math.max(0, RESULTS_WANTED - saved);
@@ -743,8 +786,8 @@ await Actor.main(async () => {
                     }
                 } else {
                     const toPush = toEnqueue.map(r => ({ url: r.url, _source: 'remote.co' }));
-                    if (toPush.length) { 
-                        await Dataset.pushData(toPush); 
+                    if (toPush.length) {
+                        await Dataset.pushData(toPush);
                         saved += toPush.length;
                         crawlerLog.info(`Saved ${toPush.length} job URLs (total: ${saved})`);
                     }
@@ -752,10 +795,10 @@ await Actor.main(async () => {
 
                 // --- Pagination Stop Logic (Req #3) ---
                 // Your existing logic, which respects MAX_PAGES and RESULTS_WANTED
-                const shouldPaginate = collectDetails 
-                    ? (pageNo < MAX_PAGES && toEnqueue.length > 0) 
+                const shouldPaginate = collectDetails
+                    ? (pageNo < MAX_PAGES && toEnqueue.length > 0)
                     : (saved < RESULTS_WANTED && pageNo < MAX_PAGES);
-                
+
                 if (shouldPaginate) {
                     const next = findNextPage($, request.url, pageNo);
                     if (next) {
@@ -783,20 +826,24 @@ await Actor.main(async () => {
                 }
                 try {
                     crawlerLog.info(`Processing DETAIL page: ${request.url}`);
-                    
-                    // Check for login wall/paywall
-                    const hasLoginWall = $('*').text().includes('Join Remote.co to Unlock') || 
-                                        $('*').text().includes('Sign in to view') ||
-                                        $('button:contains("Find Your Next Remote Job")').length > 0;
-                    
+
+                    // Check for login wall/paywall - ENHANCED DETECTION
+                    const pageText = $('body').text();
+                    const hasLoginWall = pageText.includes('Join Remote.co to Unlock') ||
+                        pageText.includes('Sign in to view') ||
+                        pageText.includes('Unlock & Apply') ||
+                        $('button:contains("Find Your Next Remote Job")').length > 0 ||
+                        $('[class*="unlock"], [class*="paywall"], [class*="login-required"]').length > 0;
+
+                    // STRATEGY: Try to extract data before login wall, if insufficient, skip the job
                     if (hasLoginWall) {
-                        crawlerLog.warning(`⚠ Login wall detected on ${request.url} - job description may be limited`);
+                        crawlerLog.warning(`⚠ Login wall detected on ${request.url} - attempting to extract data before wall`);
                     }
-                    
+
                     // Try JSON-LD first (most reliable)
                     const json = extractFromJsonLd($);
                     let data = json ? { ...json } : {};
-                    
+
                     if (json) {
                         crawlerLog.info(`✓ JSON-LD found: title="${json.title}", company="${json.company}"`);
                     } else {
@@ -806,7 +853,7 @@ await Actor.main(async () => {
                     // --- All your HTML selector logic remains unchanged ---
                     // TITLE: Try h1/h2 first, then meta tags
                     if (!data.title) {
-                        data.title = 
+                        data.title =
                             $('h1').first().text().trim() ||
                             $('h2.sc-kFmGSj, h2').first().text().trim() ||
                             $('[property="og:title"]').attr('content') ||
@@ -815,12 +862,12 @@ await Actor.main(async () => {
                             null;
                         if (data.title) crawlerLog.debug(`Found title: "${data.title.substring(0, 50)}"`);
                     }
-                    
+
                     // COMPANY: Check h2 after h1, then other selectors
                     if (!data.company) {
                         // h2 right after h1 is typically company name
                         const h2 = $('h2.sc-gMPfHu, h2').first().text().trim();
-                        data.company = 
+                        data.company =
                             h2 ||
                             $('[property="og:site_name"]').attr('content') ||
                             $('meta[property="og:site_name"]').attr('content') ||
@@ -828,27 +875,27 @@ await Actor.main(async () => {
                             null;
                         if (data.company) crawlerLog.debug(`Found company: "${data.company}"`);
                     }
-                    
+
                     // JOB TYPE: Use new extractor with JSON-LD + HTML fallback
                     if (!data.job_type) {
                         data.job_type = extractJobType(data, $);
                     }
-                    
+
                     // SALARY: Use new extractor with JSON-LD + HTML fallback
                     if (!data.salary) {
                         data.salary = extractSalary(data, $);
                     }
-                    
+
                     // LOCATION: Use new extractor with JSON-LD + HTML fallback
                     if (!data.location) {
                         data.location = extractLocation(data, $);
                     }
-                    
+
                     // DATE POSTED: Use new extractor with JSON-LD + HTML fallback
                     if (!data.date_posted) {
                         data.date_posted = extractDatePosted(data, $);
                     }
-                    
+
                     // CATEGORY: Look for "Categories" row in detail list
                     let categories = [];
                     const detailItems = $('#detail-list-wrapper li');
@@ -869,55 +916,55 @@ await Actor.main(async () => {
                     }
                     data.category = categories.length > 0 ? categories.join(', ') : (category || null);
                     if (data.category) crawlerLog.debug(`Found category: "${data.category}"`);
-                    
+
                     // DESCRIPTION: Look for "About the Role" section with improved targeting
                     if (!data.description_html) {
                         // Strategy 1: Target the specific job description section
                         let descHtml = null;
-                        
+
                         // Try specific wrapper IDs/classes for job description
                         const aboutRole = $('#about-the-role-wrapper, #job-description, .job-description-content');
                         if (aboutRole.length > 0) {
                             // Clone to avoid modifying original
                             const cloned = aboutRole.clone();
-                            
+
                             // Remove unwanted sections that aren't part of the job description
                             cloned.find('#detail-list-wrapper, .job-details-sidebar, nav, header, footer, [class*="breadcrumb"]').remove();
                             cloned.find('button:contains("Find Your Next Remote Job")').closest('div').remove();
                             cloned.find('div:contains("Join Remote.co to Unlock")').remove();
-                            
+
                             descHtml = cloned.html();
                         }
-                        
+
                         // Strategy 2: Look for main content area, excluding sidebars
                         if (!descHtml || descHtml.trim().length < 100) {
                             // Find main content, excluding known sidebar elements
                             const mainContent = $('main, article, [role="main"]').first();
                             if (mainContent.length > 0) {
                                 const cloned = mainContent.clone();
-                                
+
                                 // Remove navigation, sidebars, and detail lists
                                 cloned.find('nav, aside, header, footer').remove();
                                 cloned.find('#detail-list-wrapper, .job-details-sidebar, [class*="sidebar"]').remove();
                                 cloned.find('[class*="breadcrumb"], [class*="navigation"]').remove();
                                 cloned.find('button, [class*="cta"], [class*="unlock"]').remove();
                                 cloned.find('ul li:has(p.sc-hQNzwn)').remove(); // Remove detail list items
-                                
+
                                 descHtml = cloned.html();
                             }
                         }
-                        
+
                         // Strategy 3: Look for section headers that typically precede job descriptions
                         if (!descHtml || descHtml.trim().length < 100) {
                             const headers = $('h2, h3, h4').filter((i, el) => {
                                 const text = $(el).text().toLowerCase();
-                                return text.includes('about the role') || 
-                                       text.includes('job description') || 
-                                       text.includes('responsibilities') ||
-                                       text.includes('what you') ||
-                                       text.includes('position overview');
+                                return text.includes('about the role') ||
+                                    text.includes('job description') ||
+                                    text.includes('responsibilities') ||
+                                    text.includes('what you') ||
+                                    text.includes('position overview');
                             });
-                            
+
                             if (headers.length > 0) {
                                 const header = headers.first();
                                 // Get all siblings after the header until the next major section
@@ -926,28 +973,28 @@ await Actor.main(async () => {
                                     // Stop at next major heading or sidebar
                                     return !['H1', 'H2', 'ASIDE', 'NAV'].includes(tagName);
                                 });
-                                
+
                                 descHtml = header.prop('outerHTML') + siblings.map((i, el) => $(el).prop('outerHTML')).get().join('');
                             }
                         }
-                        
+
                         // Strategy 4: Fallback - extract paragraphs from main content area
                         if (!descHtml || descHtml.trim().length < 100) {
                             const paragraphs = $('main p, article p, [class*="content"] p').filter((i, el) => {
                                 const text = $(el).text().trim();
                                 // Filter out short paragraphs and navigation text
-                                return text.length > 50 && 
-                                       !text.includes('Join Remote.co') &&
-                                       !text.includes('Find Your Next');
+                                return text.length > 50 &&
+                                    !text.includes('Join Remote.co') &&
+                                    !text.includes('Find Your Next');
                             });
-                            
+
                             if (paragraphs.length > 0) {
                                 descHtml = paragraphs.map((i, el) => $(el).prop('outerHTML')).get().join('');
                             }
                         }
-                        
+
                         data.description_html = descHtml ? cleanDescriptionHtml(descHtml) : null;
-                        
+
                         // Log if description is still too short (likely failed to extract properly)
                         if (!data.description_html || data.description_html.length < 100) {
                             crawlerLog.warning(`⚠ Description extraction may have failed - only ${data.description_html?.length || 0} chars found`);
@@ -979,17 +1026,25 @@ await Actor.main(async () => {
                         crawlerLog.warning(`⚠ Skipping ${request.url} - validation failed: ${validation.errors.join(', ')}`);
                         return;
                     }
-                    
+
                     // Warn about missing recommended fields but don't skip
                     if (validation.warnings.length > 0) {
                         crawlerLog.debug(`⚠ Warnings for ${item.title}: ${validation.warnings.join(', ')}`);
                     }
 
-                    // Skip if no title (likely parse error)
+                    // SKIP JOBS BEHIND LOGIN WALL IF DATA IS INSUFFICIENT
+                    // Requirements: Must have title AND (company OR description)
                     if (!item.title) {
-                        crawlerLog.warning(`⚠ Skipping ${request.url} - no title found`);
-                        crawlerLog.debug(`Extracted data: ${JSON.stringify({title: data.title, company: data.company, desc: data.description_html ? 'yes' : 'no'})}`);
+                        crawlerLog.warning(`⚠ Skipping ${request.url} - no title found (likely behind login wall)`);
+                        crawlerLog.debug(`Extracted data: ${JSON.stringify({ title: data.title, company: data.company, desc: data.description_html ? 'yes' : 'no' })}`);
                         return;
+                    }
+
+                    // If login wall detected AND no meaningful description, skip this job
+                    if (hasLoginWall && (!item.description_text || item.description_text.length < 100)) {
+                        crawlerLog.warning(`⚠ Skipping ${request.url} - insufficient data (behind login wall, description < 100 chars)`);
+                        crawlerLog.debug(`Login wall job - title: "${item.title}", desc length: ${item.description_text?.length || 0}`);
+                        return; // SKIP this job entirely
                     }
 
                     // Final dedupe check
@@ -1006,7 +1061,7 @@ await Actor.main(async () => {
                     await Dataset.pushData(item);
                     saved++;
                     crawlerLog.info(`✓ SAVED #${saved}: "${item.title.substring(0, 50)}..." @ "${(item.company || 'N/A').substring(0, 30)}..."`);
-                    
+
                     // Mark session as good on successful scrape
                     if (session) session.markGood();
                 } catch (err) {
@@ -1022,11 +1077,11 @@ await Actor.main(async () => {
     log.info(`Starting crawler with ${initial.length} initial URL(s)`);
     // This await is critical for clean shutdown
     await crawler.run(initial.map(u => ({ ...u, userData: { label: 'LIST', pageNo: 1 } })));
-    
+
     // 6. FINAL LOGGING (Req #7, #10)
     // These logs run after the crawl is complete
     log.info(`Crawler finished. Total saved: ${saved} items`);
-    
+
     if (saved === 0) {
         log.warning(`No jobs were scraped! Check logs for errors or selector issues.`);
     }
