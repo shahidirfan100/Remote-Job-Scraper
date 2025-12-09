@@ -1040,9 +1040,8 @@ await Actor.main(async () => {
                     crawlerLog.error(`❌ Error: ${err.message}`);
                     if (session) session.markBad();
                 }
-            }
-        },
-    });
+            },
+        });
 
     // 5. RUN CRAWLER (Req #1, #9)
     // run crawler
