@@ -1,60 +1,6 @@
 {
   "actorSpecification": 1,
-  "fields": {
-    "title": {
-      "type": "string",
-      "title": "Job Title",
-      "description": "Position title"
-    },
-    "company": {
-      "type": "string",
-      "title": "Company",
-      "description": "Hiring company name",
-      "nullable": true
-    },
-    "location": {
-      "type": "string",
-      "title": "Location",
-      "description": "Job location or region",
-      "nullable": true
-    },
-    "job_type": {
-      "type": "string",
-      "title": "Job Type",
-      "description": "Work schedule (Full-Time, Part-Time)",
-      "nullable": true
-    },
-    "employment_type": {
-      "type": "string",
-      "title": "Employment Type",
-      "description": "Employee, Contractor, etc.",
-      "nullable": true
-    },
-    "remote_type": {
-      "type": "string",
-      "title": "Remote Type",
-      "description": "Remote work arrangement",
-      "nullable": true
-    },
-    "salary": {
-      "type": "string",
-      "title": "Salary",
-      "description": "Compensation range",
-      "nullable": true
-    },
-    "date_posted": {
-      "type": "string",
-      "title": "Date Posted",
-      "description": "When the job was posted (ISO format)",
-      "nullable": true
-    },
-    "url": {
-      "type": "string",
-      "title": "URL",
-      "description": "Direct link to job posting",
-      "format": "uri"
-    }
-  },
+  "fields": {},
   "views": {
     "overview": {
       "title": "Jobs Overview",
