@@ -1,29 +1,25 @@
 {
-  "title": "Remote.co Jobs Scraper Input",
+  "title": "Remote.co Jobs Scraper",
   "description": "Extract remote job listings from Remote.co with customizable search options.",
   "type": "object",
   "schemaVersion": 1,
   "properties": {
     "startUrl": {
-      "title": "Search URL",
+      "title": "Search URL (Optional)",
       "type": "string",
-      "description": "Remote.co search URL to scrape. If provided, keyword and location will be ignored.",
+      "description": "Remote.co search URL. If provided, keyword and location will be ignored.",
       "editor": "textfield",
-      "pattern": "^https?://.*remote\\.co.*$",
-      "sectionCaption": "Search via URL",
-      "sectionDescription": "Paste a Remote.co search URL directly"
+      "pattern": "^https?://.*remote\\.co.*$"
     },
     "keyword": {
       "title": "Search Keyword",
       "type": "string",
-      "description": "Job title, skill, or keyword to search for (e.g., 'Software Engineer', 'Marketing').",
+      "description": "Job title or skill (e.g., 'Software Engineer', 'Marketing Manager').",
       "editor": "textfield",
-      "prefill": "software engineer",
-      "sectionCaption": "Search via Keyword",
-      "sectionDescription": "Or search by keyword and location"
+      "prefill": "software engineer"
     },
     "location": {
-      "title": "Location",
+      "title": "Location (Optional)",
       "type": "string",
       "description": "Filter by location. Leave empty for worldwide remote jobs.",
       "editor": "textfield"
@@ -35,9 +31,7 @@
       "minimum": 1,
       "maximum": 10000,
       "default": 50,
-      "editor": "number",
-      "sectionCaption": "Output Settings",
-      "sectionDescription": "Control how many results to collect"
+      "editor": "number"
     },
     "max_pages": {
       "title": "Maximum Pages",
@@ -51,16 +45,14 @@
     "proxyConfiguration": {
       "title": "Proxy Configuration",
       "type": "object",
-      "description": "Select proxies for reliable scraping.",
+      "description": "Proxy settings for reliable scraping.",
       "editor": "proxy",
       "default": {
         "useApifyProxy": true,
         "apifyProxyGroups": [
           "RESIDENTIAL"
         ]
-      },
-      "sectionCaption": "Proxy Settings",
-      "sectionDescription": "Configure proxy for better success rates"
+      }
     }
   },
   "required": []

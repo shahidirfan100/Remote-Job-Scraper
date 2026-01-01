@@ -27,9 +27,10 @@ await Actor.main(async () => {
     const RESULTS_WANTED = Number.isFinite(+RESULTS_WANTED_RAW) ? Math.max(1, +RESULTS_WANTED_RAW) : 50;
     const MAX_PAGES = Number.isFinite(+MAX_PAGES_RAW) ? Math.max(1, +MAX_PAGES_RAW) : 10;
 
-    // Internal delay settings (stealth)
+    // Internal settings
     const MIN_REQUEST_DELAY = 500;
     const MAX_REQUEST_DELAY = 1500;
+    const DEDUPE_ENABLED = true; // Always deduplicate internally
 
     // ===== HELPER FUNCTIONS =====
 
@@ -216,12 +217,12 @@ await Actor.main(async () => {
 
                 // Dedupe check
                 const normalizedUrl = normalizeUrl(item.url);
-                if (dedupe && seenUrls.has(normalizedUrl)) {
+                if (DEDUPE_ENABLED && seenUrls.has(normalizedUrl)) {
                     crawlerLog.debug(`Skipping duplicate: ${normalizedUrl}`);
                     continue;
                 }
 
-                if (dedupe) seenUrls.add(normalizedUrl);
+                if (DEDUPE_ENABLED) seenUrls.add(normalizedUrl);
                 item.url = normalizedUrl;
                 jobsToSave.push(item);
             }
