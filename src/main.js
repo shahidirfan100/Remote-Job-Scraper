@@ -58,12 +58,13 @@ await Actor.main(async () => {
 
         try {
             const data = JSON.parse(script);
-            const searchData = data?.props?.pageProps?.searchPageData?.jobs;
-            if (!searchData) return null;
+            // Updated path: jobCardData instead of searchPageData
+            const jobData = data?.props?.pageProps?.jobCardData?.jobs;
+            if (!jobData) return null;
 
             return {
-                jobs: searchData.results || [],
-                totalCount: searchData.totalCount || 0,
+                jobs: jobData.results || [],
+                totalCount: jobData.totalCount || 0,
             };
         } catch (e) {
             log.warning(`Failed to parse __NEXT_DATA__: ${e.message}`);
