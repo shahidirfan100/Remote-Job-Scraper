@@ -1,103 +1,67 @@
 {
-  "title": "Remote.co Jobs Scraper",
-  "description": "Scrape remote jobs from Remote.co. Provide either keyword/location/category OR a Remote.co search URL (startUrl, url, or startUrls). Actor paginates and optionally scrapes detail pages.",
+  "title": "Remote.co Jobs Scraper Input",
+  "description": "Extract remote job listings from Remote.co with customizable search options.",
   "type": "object",
   "schemaVersion": 1,
   "properties": {
     "startUrl": {
-      "title": "Start URL",
+      "title": "Search URL",
       "type": "string",
-      "description": "Start scraping from a specific Remote.co search URL. If provided, this will be used instead of Keyword/Location.",
-      "editor": "textfield"
+      "description": "Remote.co search URL to scrape. If provided, keyword and location will be ignored.",
+      "editor": "textfield",
+      "pattern": "^https?://.*remote\\.co.*$",
+      "sectionCaption": "Search via URL",
+      "sectionDescription": "Paste a Remote.co search URL directly"
     },
     "keyword": {
-      "title": "Keyword (if not using Start URL)",
+      "title": "Search Keyword",
       "type": "string",
-      "description": "Job search keyword(s), e.g., 'Software Developer', 'Marketing Manager', 'Data Analyst'.",
+      "description": "Job title, skill, or keyword to search for (e.g., 'Software Engineer', 'Marketing').",
       "editor": "textfield",
-      "prefill": "software engineer"
+      "prefill": "software engineer",
+      "sectionCaption": "Search via Keyword",
+      "sectionDescription": "Or search by keyword and location"
     },
     "location": {
-      "title": "Location (if not using Start URL)",
+      "title": "Location",
       "type": "string",
-      "description": "Location (Remote.co mostly lists remote positions; leave empty for global results).",
+      "description": "Filter by location. Leave empty for worldwide remote jobs.",
       "editor": "textfield"
-    },
-    "category": {
-      "title": "Category (optional)",
-      "type": "string",
-      "description": "Optional job category to filter by (as used on Remote.co).",
-      "editor": "textfield"
-    },
-    "collectDetails": {
-      "title": "Collect job details",
-      "type": "boolean",
-      "description": "If enabled, scraper opens job detail pages for full description.",
-      "editor": "checkbox",
-      "default": true
     },
     "results_wanted": {
-      "title": "Maximum number of jobs",
+      "title": "Maximum Jobs",
       "type": "integer",
-      "description": "The maximum number of jobs to collect. Leave empty to collect all available jobs.",
+      "description": "Maximum number of job listings to collect.",
       "minimum": 1,
-      "default": 100,
-      "editor": "number"
+      "maximum": 10000,
+      "default": 50,
+      "editor": "number",
+      "sectionCaption": "Output Settings",
+      "sectionDescription": "Control how many results to collect"
     },
     "max_pages": {
-      "title": "Maximum number of pages",
+      "title": "Maximum Pages",
       "type": "integer",
-      "description": "A safety cap on the number of search result pages to visit.",
+      "description": "Maximum number of search result pages to process.",
       "minimum": 1,
-      "editor": "number",
-      "default": 20
+      "maximum": 100,
+      "default": 10,
+      "editor": "number"
     },
     "proxyConfiguration": {
-      "title": "Proxy configuration",
+      "title": "Proxy Configuration",
       "type": "object",
-      "description": "Use Apify Proxy (datacenter recommended for Remote.co).",
+      "description": "Select proxies for reliable scraping.",
       "editor": "proxy",
       "default": {
         "useApifyProxy": true,
-        "apifyProxyGroups": ["RESIDENTIAL"]
-      }
-    },
-    "cookies": {
-      "title": "Custom cookies (raw header)",
-      "type": "string",
-      "description": "Optional raw 'Cookie' header string. Can help bypass consent banners.",
-      "editor": "textfield"
-    },
-    "cookiesJson": {
-      "title": "Custom cookies (JSON)",
-      "type": "string",
-      "description": "Optional JSON-formatted cookies. Accepts an array (e.g., [{\"name\":\"a\",\"value\":\"1\"}]) or an object map (e.g., {\"a\":\"1\"}).",
-      "editor": "textarea"
-    },
-    "dedupe": {
-      "title": "Deduplicate results",
-      "type": "boolean",
-      "description": "Remove duplicate job URLs from results (in-memory deduplication).",
-      "editor": "checkbox",
-      "default": true
-    },
-    "minRequestDelay": {
-      "title": "Minimum request delay (ms)",
-      "type": "integer",
-      "description": "Minimum delay between requests in milliseconds (for politeness and stealth).",
-      "minimum": 0,
-      "default": 500,
-      "editor": "number"
-    },
-    "maxRequestDelay": {
-      "title": "Maximum request delay (ms)",
-      "type": "integer",
-      "description": "Maximum delay between requests in milliseconds (random delays help avoid detection).",
-      "minimum": 0,
-      "default": 1500,
-      "editor": "number"
+        "apifyProxyGroups": [
+          "RESIDENTIAL"
+        ]
+      },
+      "sectionCaption": "Proxy Settings",
+      "sectionDescription": "Configure proxy for better success rates"
     }
   },
-  "required": [],
-  "additionalProperties": false
+  "required": []
 }

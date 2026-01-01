@@ -1,11 +1,11 @@
 {
     "actorOutputSchemaVersion": 1,
-    "title": "Output schema",
+    "title": "Remote.co Jobs Scraper Output",
     "properties": {
-        "overview": {
+        "dataset": {
             "type": "string",
-            "title": "Overview",
-            "template": "{{links.apiDefaultDatasetUrl}}/items?view=overview"
+            "title": "Job Listings",
+            "template": "{{links.apiDefaultDatasetUrl}}/items"
         }
     }
 }

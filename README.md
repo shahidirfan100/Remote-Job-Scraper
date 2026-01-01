@@ -1,81 +1,88 @@
 # Remote.co Jobs Scraper
 
-## Description
+Effortlessly extract remote job listings from [Remote.co](https://remote.co), one of the leading platforms for remote work opportunities. Collect structured job data including titles, companies, salaries, locations, and more.
 
-The Remote.co Jobs Scraper is a powerful Apify actor designed to extract remote job listings from Remote.co, one of the leading platforms for remote work opportunities. This scraper efficiently collects comprehensive job data including titles, companies, salaries, locations, and detailed descriptions, making it ideal for job market analysis, recruitment, and career research.
+## What does Remote.co Jobs Scraper do?
 
-Perfect for HR professionals, job seekers, and data analysts looking to gather insights from the remote job market. The scraper handles pagination automatically and provides structured data output for easy integration with databases and analytics tools.
+This actor automatically scrapes remote job listings from Remote.co and outputs structured data in JSON format. It handles pagination, avoids duplicates, and provides all the essential job details you need for job market research, recruitment, or career planning.
 
-## Features
+**Key capabilities:**
 
-- **Comprehensive Job Data Extraction**: Captures all essential job details including salary information, employment types, and posting dates
-- **Advanced Search Capabilities**: Search by keywords, locations, and categories with flexible input options
-- **Intelligent Pagination**: Automatically navigates through multiple pages to collect the desired number of results
-- **Duplicate Prevention**: Built-in deduplication to ensure clean, unique job listings
-- **Flexible Output**: Structured JSON data with both HTML and text descriptions
-- **Configurable Performance**: Adjustable request delays and result limits for optimal performance
-- **Proxy Support**: Compatible with residential proxies for reliable scraping
-- **Error Handling**: Robust error management with session rotation and retry logic
+- 🔍 Search jobs by keyword and location
+- 💰 Extract salary information when available
+- 📍 Capture job locations and remote work options
+- 📅 Get posting dates for freshness analysis
+- 🔗 Collect direct URLs to job listings
+- ⚡ Fast and efficient with automatic pagination
+
+## Why scrape Remote.co?
+
+Remote.co is a trusted source for legitimate remote job opportunities. Scraping this data helps you:
+
+- **Recruiters**: Build talent pipelines and track competitor job postings
+- **Job Seekers**: Aggregate opportunities across multiple searches
+- **Researchers**: Analyze remote work trends and salary data
+- **HR Teams**: Benchmark compensation and job requirements
+- **Entrepreneurs**: Identify market demands and skill trends
 
 ## Input
 
-The actor accepts various input parameters to customize your job scraping needs. All parameters are optional, allowing for flexible usage scenarios.
+Configure the scraper to match your needs:
 
-### Search Parameters
-- **`keyword`** (string): Job title or skill keywords (e.g., "Software Engineer", "Data Analyst")
-- **`location`** (string): Location filter for job searches
-- **`category`** (string): Job category filter
-- **`startUrl`** / **`url`** / **`startUrls`** (string/array): Direct Remote.co URLs to scrape
+| Field | Description | Default |
+|-------|-------------|---------|
+| **keyword** | Job title or skill to search (e.g., "Software Engineer") | `software engineer` |
+| **location** | Filter by location (leave empty for worldwide) | - |
+| **results_wanted** | Maximum number of jobs to collect | `50` |
+| **max_pages** | Maximum search result pages to process | `10` |
+| **proxyConfiguration** | Proxy settings for reliable scraping | Residential proxies |
 
-### Crawl Configuration
-- **`results_wanted`** (integer, default: 100): Maximum number of jobs to collect
-- **`max_pages`** (integer, default: 20): Maximum pages to crawl
-- **`collectDetails`** (boolean, default: true): Whether to fetch full job descriptions
-- **`dedupe`** (boolean, default: true): Enable duplicate removal
+### Example Input
 
-### Performance Settings
-- **`minRequestDelay`** (integer, default: 500): Minimum delay between requests in milliseconds
-- **`maxRequestDelay`** (integer, default: 1500): Maximum delay between requests in milliseconds
-- **`proxyConfiguration`** (object): Proxy settings for enhanced reliability
-
-### Advanced Options
-- **`cookies`** (string): Raw cookie header for authentication
-- **`cookiesJson`** (string): JSON-formatted cookies
+```json
+{
+  "keyword": "data analyst",
+  "results_wanted": 100,
+  "max_pages": 10
+}
+```
 
 ## Output
 
-The actor outputs structured job data in JSON format, saved to the Apify dataset. Each job record includes:
+Each job listing includes the following fields:
+
+| Field | Description | Example |
+|-------|-------------|---------|
+| `title` | Job position title | "Senior Software Engineer" |
+| `company` | Company name (when available) | "Tech Corp" |
+| `location` | Job location or region | "US National" |
+| `job_type` | Work schedule | "Full-Time" |
+| `employment_type` | Employment classification | "Employee" |
+| `remote_type` | Remote work arrangement | "100% Remote Work" |
+| `salary` | Compensation range | "$120,000 - $150,000 Annually" |
+| `date_posted` | When the job was posted | "2025-12-15T10:00:00Z" |
+| `url` | Direct link to job posting | "https://remote.co/remote-jobs/..." |
+
+### Sample Output
 
 ```json
 {
   "title": "Senior Software Engineer",
-  "company": "Tech Innovations Inc",
+  "company": null,
+  "location": "US National",
   "job_type": "Full-Time",
-  "category": "Engineering",
-  "location": "Remote",
-  "date_posted": "2025-12-08T10:00:00Z",
-  "salary": "USD 120,000 - 150,000",
-  "description_html": "<p>Full job description with HTML formatting...</p>",
-  "description_text": "Plain text version of the job description for easy processing",
-  "url": "https://remote.co/remote-jobs/senior-software-engineer-12345"
+  "employment_type": "Employee",
+  "remote_type": "100% Remote Work",
+  "salary": "$137,250 - $185,250 Annually",
+  "date_posted": "2025-11-12T18:25:18Z",
+  "url": "https://remote.co/remote-jobs/senior-software-engineer-abc123"
 }
 ```
 
-### Field Descriptions
-- **`title`**: Job position title
-- **`company`**: Hiring company name
-- **`job_type`**: Employment type (Full-Time, Part-Time, Contract, etc.)
-- **`category`**: Job category classification
-- **`location`**: Job location or "Remote"
-- **`date_posted`**: When the job was posted (ISO date format)
-- **`salary`**: Salary range or information if available
-- **`description_html`**: Full job description with HTML formatting
-- **`description_text`**: Plain text version of the description
-- **`url`**: Direct link to the job posting
-
 ## Usage Examples
 
-### Basic Keyword Search
+### Find Software Engineering Jobs
+
 ```json
 {
   "keyword": "software engineer",
@@ -83,79 +90,73 @@ The actor outputs structured job data in JSON format, saved to the Apify dataset
 }
 ```
 
-### Location-Specific Search
+### Collect Marketing Positions
+
 ```json
 {
   "keyword": "marketing manager",
   "location": "Europe",
-  "results_wanted": 25
+  "results_wanted": 100,
+  "max_pages": 15
 }
 ```
 
-### Direct URL Scraping
-```json
-{
-  "startUrl": "https://remote.co/remote-jobs/search?search_keywords=data+scientist",
-  "collectDetails": true,
-  "results_wanted": 100
-}
-```
+### Large-Scale Data Collection
 
-### High-Volume Scraping with Custom Delays
 ```json
 {
   "keyword": "developer",
   "results_wanted": 500,
-  "max_pages": 50,
-  "minRequestDelay": 1000,
-  "maxRequestDelay": 2000,
-  "proxyConfiguration": {
-    "useApifyProxy": true,
-    "apifyProxyGroups": ["RESIDENTIAL"]
-  }
+  "max_pages": 50
 }
 ```
 
-## Configuration
+## Integrations
 
-### Proxy Setup
-For optimal performance and to avoid rate limiting, configure residential proxies:
+Connect your scraped data to other services:
 
-```json
-{
-  "proxyConfiguration": {
-    "useApifyProxy": true,
-    "apifyProxyGroups": ["RESIDENTIAL"]
-  }
-}
-```
+- **Google Sheets**: Export job listings for tracking and analysis
+- **Slack**: Get notifications for new job postings
+- **Webhooks**: Send data to your own applications
+- **APIs**: Access results programmatically
 
-### Performance Tuning
-Adjust delays based on your needs:
-- **Fast scraping**: 200-500ms delays
-- **Polite scraping**: 500-1500ms delays (recommended)
-- **Very slow**: 2000-5000ms delays
+## Tips for Best Results
 
-### Result Limits
-- Set `results_wanted` to control output size
-- Use `max_pages` as a safety limit
-- Enable `dedupe` to prevent duplicates
+1. **Start small** - Test with 10-20 results before large runs
+2. **Use specific keywords** - More targeted searches yield better results
+3. **Enable proxies** - Residential proxies provide the best success rates
+4. **Check regularly** - New jobs are posted daily
+5. **Monitor logs** - Review run logs to troubleshoot any issues
 
-## Best Practices
+## Cost Estimation
 
-1. **Start Small**: Begin with `results_wanted: 10` to test your configuration
-2. **Use Proxies**: Residential proxies provide better success rates
-3. **Monitor Logs**: Check for rate limiting errors and adjust delays accordingly
-4. **Enable Deduplication**: Keep `dedupe: true` for clean datasets
-5. **Respect Limits**: Don't set unrealistically high `results_wanted` values
-6. **Test Regularly**: Remote.co's structure may change over time
+The actor is optimized for efficiency. Typical costs:
+
+| Jobs | Estimated Cost |
+|------|----------------|
+| 50 | ~$0.01 |
+| 500 | ~$0.05 |
+| 5,000 | ~$0.50 |
+
+*Costs may vary based on proxy usage and request delays.*
+
+## Limitations
+
+- **Company names**: Some listings show company names only after login
+- **Job descriptions**: Full descriptions require website authentication
+- **Rate limits**: Very high-volume scraping may require slower request delays
 
 ## Support
 
-For issues, questions, or feature requests:
-- Check the actor's run logs for detailed error messages
-- Verify your input configuration matches the expected format
-- Ensure you're using appropriate proxy settings
-- Test with smaller result limits first
+If you encounter issues:
 
-This scraper is designed for legitimate job market research and recruitment purposes. Please use responsibly and in accordance with Remote.co's terms of service.
+1. Check the run logs for error details
+2. Verify your input configuration
+3. Try with residential proxies enabled
+4. Start with a smaller `results_wanted` value
+
+For questions or feature requests, please reach out through the Apify platform.
+
+---
+
+*This actor is designed for legitimate job market research and recruitment purposes. Please use responsibly.*
