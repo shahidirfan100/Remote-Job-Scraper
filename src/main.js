@@ -1,274 +1,418 @@
-// Remote.co Jobs Scraper - Production-Ready
-// Extracts remote job listings from Remote.co search pages
 import { Actor, log } from 'apify';
-import { CheerioCrawler, Dataset } from 'crawlee';
+import { readFile } from 'node:fs/promises';
+import { Dataset } from 'crawlee';
+import { gotScraping } from 'got-scraping';
+
+const DEFAULT_HEADERS = {
+    accept: 'application/json,text/plain,*/*',
+    'accept-language': 'en-US,en;q=0.9',
+    'cache-control': 'no-cache',
+    pragma: 'no-cache',
+    referer: 'https://remote.co/remote-jobs/search',
+    'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:147.0) Gecko/20100101 Firefox/147.0',
+};
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const hasValue = (value) => {
+    if (value === null || value === undefined) return false;
+    if (typeof value === 'string') return value.trim() !== '';
+    if (Array.isArray(value)) return value.length > 0;
+    return true;
+};
+
+const cleanRecord = (value) => {
+    if (value === null || value === undefined) return undefined;
+
+    if (Array.isArray(value)) {
+        const cleanedArray = value
+            .map((entry) => cleanRecord(entry))
+            .filter((entry) => entry !== undefined);
+        return cleanedArray.length > 0 ? cleanedArray : undefined;
+    }
+
+    if (typeof value === 'object') {
+        const entries = Object.entries(value)
+            .map(([key, entry]) => [key, cleanRecord(entry)])
+            .filter(([, entry]) => entry !== undefined);
+        return entries.length > 0 ? Object.fromEntries(entries) : undefined;
+    }
+
+    if (typeof value === 'string') {
+        const trimmed = value.trim();
+        return trimmed !== '' ? trimmed : undefined;
+    }
+
+    return value;
+};
+
+const readJsonFile = async (path) => {
+    try {
+        const content = await readFile(path, 'utf8');
+        return JSON.parse(content);
+    } catch {
+        return {};
+    }
+};
+
+const buildSchemaFallbackInput = async () => {
+    const schema = await readJsonFile('.actor/input_schema.json');
+    const properties = schema?.properties ?? {};
+    const fallback = {};
+
+    for (const [key, definition] of Object.entries(properties)) {
+        if (Object.prototype.hasOwnProperty.call(definition, 'default')) {
+            fallback[key] = definition.default;
+            continue;
+        }
+
+        if (Object.prototype.hasOwnProperty.call(definition, 'prefill')) {
+            fallback[key] = definition.prefill;
+        }
+    }
+
+    return fallback;
+};
+
+const toNumberOrNull = (value) => {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed <= 0) return null;
+    return parsed;
+};
+
+const toArray = (value) => (Array.isArray(value) ? value.filter((v) => v !== null && v !== undefined && v !== '') : []);
+
+const toCsv = (value) => {
+    const arr = toArray(value);
+    return arr.length > 0 ? arr.join(', ') : null;
+};
+
+const normalizeUrl = (url) => {
+    if (!url) return null;
+    try {
+        const normalized = new URL(url);
+        normalized.hash = '';
+        normalized.searchParams.delete('utm_source');
+        normalized.searchParams.delete('utm_medium');
+        normalized.searchParams.delete('utm_campaign');
+        return normalized.href;
+    } catch {
+        return url;
+    }
+};
+
+const extractBuildIdFromHtml = (html) => {
+    const marker = '<script id="__NEXT_DATA__" type="application/json">';
+    const start = html.indexOf(marker);
+    if (start < 0) return null;
+    const from = start + marker.length;
+    const end = html.indexOf('</script>', from);
+    if (end < 0) return null;
+    const nextData = JSON.parse(html.slice(from, end));
+    return nextData?.buildId ?? null;
+};
+
+const extractKeywordFromStartUrl = (url) => {
+    if (!url) return '';
+    try {
+        const parsed = new URL(url);
+        return (parsed.searchParams.get('searchkeyword') || '').trim();
+    } catch {
+        return '';
+    }
+};
+
+const loadLocalInputFallback = async () => {
+    if (process.env.APIFY_IS_AT_HOME) return {};
+    return readJsonFile('INPUT.json');
+};
+
+const locationMatches = (job, locationNeedle) => {
+    if (!locationNeedle) return true;
+    const haystack = [
+        ...toArray(job.jobLocations),
+        ...toArray(job.allowedCandidateLocation),
+        ...toArray(job.countries),
+        ...toArray(job.states),
+        ...toArray(job.cities),
+        ...(typeof job.locations === 'string' ? [job.locations] : []),
+    ]
+        .join(' | ')
+        .toLowerCase();
+    return haystack.includes(locationNeedle.toLowerCase());
+};
+
+const mapJob = (job, keyword, location) => {
+    const jobUrl = normalizeUrl(job?.slug ? `https://remote.co/remote-jobs/${job.slug}` : null);
+    const applyUrl = normalizeUrl(job?.applyUrl || jobUrl);
+
+    return cleanRecord({
+        id: job?.id ?? null,
+        title: job?.title ?? null,
+        company: typeof job?.company === 'string' ? job.company : job?.company?.name ?? null,
+        location: toCsv(job?.jobLocations),
+        job_locations: toArray(job?.jobLocations),
+        candidate_locations: toArray(job?.allowedCandidateLocation),
+        countries: toArray(job?.countries),
+        states: toArray(job?.states),
+        cities: toArray(job?.cities),
+        remote_type: toCsv(job?.remoteOptions),
+        remote_options: toArray(job?.remoteOptions),
+        job_type: toCsv(job?.jobSchedules),
+        job_schedules: toArray(job?.jobSchedules),
+        employment_type: toCsv(job?.jobTypes),
+        job_types: toArray(job?.jobTypes),
+        salary: job?.salaryRange ?? null,
+        salary_min: toNumberOrNull(job?.salaryMin),
+        salary_max: toNumberOrNull(job?.salaryMax),
+        salary_unit: job?.salaryUnit ?? null,
+        salary_currency: job?.salaryCurrency ?? null,
+        date_posted: job?.postedDate ?? null,
+        created_on: job?.createdOn ?? null,
+        expire_on: job?.expireOn ?? null,
+        career_level: toArray(job?.careerLevel),
+        education_levels: toArray(job?.educationLevels),
+        travel_required: job?.travelRequired ?? null,
+        is_flexible_schedule: Boolean(job?.isFlexibleSchedule),
+        is_telecommute: Boolean(job?.isTelecommute),
+        is_freelancing_contract: Boolean(job?.isFreelancingContract),
+        is_featured: Boolean(job?.featured),
+        is_hosted: Boolean(job?.hosted),
+        is_free_job: Boolean(job?.isFreeJob),
+        eligible_for_expert_apply: Boolean(job?.eligibleForExpertApply),
+        apply_status: job?.applyJobStatus ?? null,
+        score: Number.isFinite(Number(job?.score)) ? Number(job.score) : null,
+        match_id: job?.matchID ?? null,
+        region_ids: toArray(job?.regionID),
+        postal_code: job?.postalCode ?? null,
+        coordinates: job?.coordinates ?? null,
+        url: jobUrl,
+        apply_url: applyUrl,
+        _source: 'remote.co',
+        search_keyword: keyword || null,
+        search_location: location || null,
+    });
+};
+
+const createDedupeKey = (job, mapped) => {
+    const fromId = hasValue(job?.id) ? String(job.id).trim().toLowerCase() : null;
+    if (fromId) return `id:${fromId}`;
+
+    const fromUrl = hasValue(mapped?.url) ? String(mapped.url).trim().toLowerCase() : null;
+    if (fromUrl) return `url:${fromUrl}`;
+
+    const title = hasValue(mapped?.title) ? String(mapped.title).trim().toLowerCase() : '';
+    const company = hasValue(mapped?.company) ? String(mapped.company).trim().toLowerCase() : '';
+    const posted = hasValue(mapped?.date_posted) ? String(mapped.date_posted).trim().toLowerCase() : '';
+    const location = hasValue(mapped?.location) ? String(mapped.location).trim().toLowerCase() : '';
+    const composite = [title, company, posted, location].join('|');
+
+    return composite.replace(/^\|+|\|+$/g, '') || null;
+};
 
 await Actor.main(async () => {
-    // ===== INPUT HANDLING =====
-    const input = (await Actor.getInput()) || {};
+    const actorInput = (await Actor.getInput()) || {};
+    const schemaFallbackInput = await buildSchemaFallbackInput();
+    const localInput = await loadLocalInputFallback();
 
-    log.info('Received input:', {
-        keyword: input.keyword,
-        location: input.location,
-        startUrl: input.startUrl,
-        results_wanted: input.results_wanted,
-        max_pages: input.max_pages,
-    });
+    const runtimeInput = Object.keys(actorInput).length > 0
+        ? actorInput
+        : (Object.keys(localInput).length > 0 ? localInput : {});
+
+    const input = {
+        ...schemaFallbackInput,
+        ...runtimeInput,
+    };
 
     const {
-        keyword = 'software engineer',
-        location = '',
-        startUrl: startUrlInput = '',
-        results_wanted: RESULTS_WANTED_RAW = 50,
-        max_pages: MAX_PAGES_RAW = 10,
+        keyword: keywordInput,
+        location: locationInput,
+        startUrl: startUrlInput,
+        results_wanted: resultsWantedRaw = 20,
+        max_pages: maxPagesRaw = 10,
         proxyConfiguration,
     } = input;
 
-    const RESULTS_WANTED = Number.isFinite(+RESULTS_WANTED_RAW) ? Math.max(1, +RESULTS_WANTED_RAW) : 50;
-    const MAX_PAGES = Number.isFinite(+MAX_PAGES_RAW) ? Math.max(1, +MAX_PAGES_RAW) : 10;
+    const keyword = hasValue(keywordInput)
+        ? String(keywordInput).trim()
+        : (hasValue(schemaFallbackInput.keyword) ? String(schemaFallbackInput.keyword).trim() : '');
 
-    // Internal settings
-    const MIN_REQUEST_DELAY = 500;
-    const MAX_REQUEST_DELAY = 1500;
-    const DEDUPE_ENABLED = true; // Always deduplicate internally
+    const location = hasValue(locationInput)
+        ? String(locationInput).trim()
+        : (hasValue(schemaFallbackInput.location) ? String(schemaFallbackInput.location).trim() : '');
 
-    // ===== HELPER FUNCTIONS =====
+    const startUrl = hasValue(startUrlInput)
+        ? String(startUrlInput).trim()
+        : (hasValue(schemaFallbackInput.startUrl) ? String(schemaFallbackInput.startUrl).trim() : '');
 
-    /**
-     * Build the start URL for Remote.co search
-     */
-    const buildStartUrl = (kw, page = 1) => {
-        const u = new URL('https://remote.co/remote-jobs/search');
-        if (kw && String(kw).trim()) {
-            u.searchParams.set('searchkeyword', String(kw).trim());
+    const keywordFromStartUrl = extractKeywordFromStartUrl(startUrl);
+    const searchKeyword = keyword || keywordFromStartUrl;
+
+    if (!searchKeyword) {
+        throw new Error('Missing input. Provide "keyword" or a "startUrl" containing the searchkeyword parameter.');
+    }
+
+    const fallbackResultsWanted = hasValue(schemaFallbackInput.results_wanted)
+        ? Number(schemaFallbackInput.results_wanted)
+        : 20;
+
+    const fallbackMaxPages = hasValue(schemaFallbackInput.max_pages)
+        ? Number(schemaFallbackInput.max_pages)
+        : 10;
+
+    const parsedResultsWanted = hasValue(resultsWantedRaw) ? Number(resultsWantedRaw) : fallbackResultsWanted;
+    const parsedMaxPages = hasValue(maxPagesRaw) ? Number(maxPagesRaw) : fallbackMaxPages;
+
+    const resultsWanted = Number.isFinite(parsedResultsWanted) && parsedResultsWanted > 0
+        ? Math.max(1, Math.floor(parsedResultsWanted))
+        : Math.max(1, Math.floor(fallbackResultsWanted || 20));
+
+    const maxPages = Number.isFinite(parsedMaxPages) && parsedMaxPages > 0
+        ? Math.max(1, Math.floor(parsedMaxPages))
+        : Math.max(1, Math.floor(fallbackMaxPages || 10));
+
+    const buildSearchUrl = (page = 1) => {
+        const url = new URL('https://remote.co/remote-jobs/search');
+        url.searchParams.set('searchkeyword', searchKeyword);
+        url.searchParams.set('useclocation', 'true');
+        if (location) {
+            url.searchParams.set('searchlocation', location);
         }
-        u.searchParams.set('useclocation', 'true');
         if (page > 1) {
-            u.searchParams.set('page', String(page));
+            url.searchParams.set('page', String(page));
         }
-        return u.href;
+        return url.href;
     };
 
-    /**
-     * Extract jobs from __NEXT_DATA__ JSON (Priority 1)
-     */
-    const extractFromNextData = ($) => {
-        const script = $('#__NEXT_DATA__').html();
-        if (!script) return null;
+    const proxy = proxyConfiguration ? await Actor.createProxyConfiguration(proxyConfiguration) : undefined;
 
-        try {
-            const data = JSON.parse(script);
-            // Updated path: jobCardData instead of searchPageData
-            const jobData = data?.props?.pageProps?.jobCardData?.jobs;
-            if (!jobData) return null;
+    const fetchWithRetry = async ({ url, responseType = 'json', label }) => {
+        const maxAttempts = 4;
 
-            return {
-                jobs: jobData.results || [],
-                totalCount: jobData.totalCount || 0,
-            };
-        } catch (e) {
-            log.warning(`Failed to parse __NEXT_DATA__: ${e.message}`);
-            return null;
-        }
-    };
-
-    /**
-     * Map a job from __NEXT_DATA__ to output schema
-     */
-    const mapJobToItem = (job) => {
-        return {
-            id: job.id || null,
-            title: job.title || null,
-            company: job.company || null, // Often null - behind login wall
-            location: Array.isArray(job.jobLocations) ? job.jobLocations.join(', ') : null,
-            job_type: Array.isArray(job.jobSchedules) ? job.jobSchedules.join(', ') : null,
-            employment_type: Array.isArray(job.jobTypes) ? job.jobTypes.join(', ') : null,
-            remote_type: Array.isArray(job.remoteOptions) ? job.remoteOptions.join(', ') : null,
-            salary: job.salaryRange || null,
-            date_posted: job.postedDate || null,
-            url: job.slug ? `https://remote.co/remote-jobs/${job.slug}` : null,
-            _source: 'remote.co',
-        };
-    };
-
-    /**
-     * Normalize URL for deduplication
-     */
-    const normalizeUrl = (u) => {
-        try {
-            const nu = new URL(u);
-            nu.hash = '';
-            ['utm_source', 'utm_medium', 'utm_campaign'].forEach(p => nu.searchParams.delete(p));
-            return nu.href;
-        } catch {
-            return u;
-        }
-    };
-
-    /**
-     * Random delay between requests for stealth
-     */
-    const randomDelay = () => {
-        const delay = Math.floor(Math.random() * (MAX_REQUEST_DELAY - MIN_REQUEST_DELAY + 1)) + MIN_REQUEST_DELAY;
-        return new Promise(r => setTimeout(r, delay));
-    };
-
-    // ===== STATE =====
-    const seenUrls = new Set();
-    let saved = 0;
-
-    // ===== BUILD INITIAL URL =====
-    // Use provided startUrl if valid, otherwise build from keyword
-    const initialUrl = (startUrlInput && startUrlInput.includes('remote.co'))
-        ? startUrlInput
-        : buildStartUrl(keyword);
-    log.info(`Starting with URL: ${initialUrl}`);
-
-    // ===== PROXY CONFIGURATION =====
-    const proxyConf = proxyConfiguration ? await Actor.createProxyConfiguration(proxyConfiguration) : undefined;
-
-    // ===== CRAWLER =====
-    const crawler = new CheerioCrawler({
-        proxyConfiguration: proxyConf,
-        maxRequestRetries: 5,
-        useSessionPool: true,
-        sessionPoolOptions: {
-            maxPoolSize: 50,
-            sessionOptions: {
-                maxUsageCount: 30,
-                maxErrorScore: 3,
-            },
-        },
-        maxConcurrency: 10,
-        requestHandlerTimeoutSecs: 120,
-
-        // Stealth headers
-        preNavigationHooks: [
-            async (ctx, gotOptions) => {
-                gotOptions.headers = {
-                    'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-                    'accept-language': 'en-US,en;q=0.9',
-                    'accept-encoding': 'gzip, deflate, br',
-                    'cache-control': 'no-cache',
-                    'pragma': 'no-cache',
-                    'sec-ch-ua': '"Google Chrome";v=\"131\", \"Chromium\";v=\"131\", \"Not_A Brand\";v=\"24\"',
-                    'sec-ch-ua-mobile': '?0',
-                    'sec-ch-ua-platform': '"Windows"',
-                    'sec-fetch-dest': 'document',
-                    'sec-fetch-mode': 'navigate',
-                    'sec-fetch-site': 'none',
-                    'sec-fetch-user': '?1',
-                    'upgrade-insecure-requests': '1',
-                    'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-                    ...gotOptions.headers,
-                };
-            },
-        ],
-
-        // Error handling
-        failedRequestHandler: async ({ request, error, session, log: crawlerLog }) => {
-            crawlerLog.warning(`Request failed: ${request.url} - ${error?.message || 'Unknown error'}`);
-            if (session) {
-                if (error?.message?.includes('403') || error?.message?.includes('429')) {
-                    session.retire();
-                } else {
-                    session.markBad();
-                }
-            }
-        },
-
-        // Main request handler
-        async requestHandler({ request, $, enqueueLinks, log: crawlerLog, session }) {
-            const pageNo = request.userData?.pageNo || 1;
-
-            await randomDelay();
-            crawlerLog.info(`Processing page ${pageNo}: ${request.url}`);
-
-            // Check if we've reached the limit
-            if (saved >= RESULTS_WANTED) {
-                crawlerLog.info(`Reached results limit (${RESULTS_WANTED}), stopping.`);
-                return;
-            }
-
-            // === PRIORITY 1: Extract from __NEXT_DATA__ ===
-            const nextData = extractFromNextData($);
-
-            if (!nextData || nextData.jobs.length === 0) {
-                crawlerLog.warning(`No jobs found in __NEXT_DATA__ on page ${pageNo}`);
-                return;
-            }
-
-            crawlerLog.info(`Found ${nextData.jobs.length} jobs in __NEXT_DATA__ (Total available: ${nextData.totalCount})`);
-
-            // Process each job
-            const jobsToSave = [];
-            for (const job of nextData.jobs) {
-                if (saved + jobsToSave.length >= RESULTS_WANTED) {
-                    crawlerLog.info(`Reached results limit during processing.`);
-                    break;
-                }
-
-                const item = mapJobToItem(job);
-
-                // Validate: must have title and URL
-                if (!item.title || !item.url) {
-                    crawlerLog.debug(`Skipping job with missing title or URL`);
-                    continue;
-                }
-
-                // Dedupe check
-                const normalizedUrl = normalizeUrl(item.url);
-                if (DEDUPE_ENABLED && seenUrls.has(normalizedUrl)) {
-                    crawlerLog.debug(`Skipping duplicate: ${normalizedUrl}`);
-                    continue;
-                }
-
-                if (DEDUPE_ENABLED) seenUrls.add(normalizedUrl);
-                item.url = normalizedUrl;
-                jobsToSave.push(item);
-            }
-
-            // Save all jobs in batch
-            if (jobsToSave.length > 0) {
-                await Dataset.pushData(jobsToSave);
-                saved += jobsToSave.length;
-                crawlerLog.info(`✓ Saved ${jobsToSave.length} jobs (Total: ${saved}/${RESULTS_WANTED})`);
-
-                // Log sample
-                const sample = jobsToSave[0];
-                crawlerLog.info(`  Sample: "${sample.title}" | ${sample.location || 'Remote'} | ${sample.salary || 'N/A'}`);
-            }
-
-            // Mark session as good
-            if (session) session.markGood();
-
-            // === PAGINATION ===
-            const shouldPaginate = saved < RESULTS_WANTED && pageNo < MAX_PAGES && nextData.jobs.length > 0;
-
-            if (shouldPaginate) {
-                const nextPage = pageNo + 1;
-                const nextUrl = buildStartUrl(keyword, nextPage);
-
-                crawlerLog.info(`Enqueueing page ${nextPage}: ${nextUrl}`);
-
-                await enqueueLinks({
-                    urls: [nextUrl],
-                    userData: { pageNo: nextPage },
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                const proxyUrl = proxy ? await proxy.newUrl() : undefined;
+                const response = await gotScraping({
+                    url,
+                    proxyUrl,
+                    headers: DEFAULT_HEADERS,
+                    timeout: { request: 45000 },
+                    responseType,
+                    retry: { limit: 0 },
+                    throwHttpErrors: false,
                 });
-            } else {
-                crawlerLog.info(`Pagination stopped: saved=${saved}/${RESULTS_WANTED}, page=${pageNo}/${MAX_PAGES}`);
+
+                const status = response.statusCode || 0;
+                if (status >= 400) {
+                    throw new Error(`HTTP ${status}`);
+                }
+
+                return responseType === 'json' ? response.body : String(response.body);
+            } catch (error) {
+                const isLastAttempt = attempt === maxAttempts;
+                const jitter = Math.floor(Math.random() * 250);
+                const backoffMs = Math.min(8000, 350 * 2 ** (attempt - 1) + jitter);
+
+                if (isLastAttempt) {
+                    throw new Error(`${label} failed after ${maxAttempts} attempts: ${error.message}`);
+                }
+
+                log.warning(`${label} failed on attempt ${attempt}/${maxAttempts} (${error.message}), retrying in ${backoffMs}ms`);
+                await sleep(backoffMs);
             }
-        },
+        }
+
+        throw new Error(`${label} failed unexpectedly`);
+    };
+
+    const buildIdFromStartUrl = (() => {
+        const match = typeof startUrl === 'string' ? startUrl.match(/\/_next\/data\/([^/]+)\//) : null;
+        return match?.[1] || null;
+    })();
+
+    const buildId = buildIdFromStartUrl || extractBuildIdFromHtml(
+        await fetchWithRetry({
+            url: startUrl || buildSearchUrl(1),
+            responseType: 'text',
+            label: 'Build ID discovery request',
+        }),
+    );
+
+    if (!buildId) {
+        throw new Error('Unable to discover Next.js build ID for Remote.co.');
+    }
+
+    const seen = new Set();
+    let saved = 0;
+    let page = 1;
+
+    log.info('Starting Remote.co API extraction', {
+        searchKeyword,
+        location,
+        resultsWanted,
+        maxPages,
     });
 
-    // ===== RUN CRAWLER =====
-    log.info(`Starting Remote.co scraper...`);
-    await crawler.run([{ url: initialUrl, userData: { pageNo: 1 } }]);
+    while (saved < resultsWanted && page <= maxPages) {
+        const apiUrl = new URL(`https://remote.co/_next/data/${buildId}/remote-jobs/search.json`);
+        apiUrl.searchParams.set('searchkeyword', searchKeyword);
+        apiUrl.searchParams.set('useclocation', 'true');
+        apiUrl.searchParams.set('page', String(page));
+        if (location) {
+            apiUrl.searchParams.set('searchlocation', location);
+        }
 
-    // ===== FINAL LOGGING =====
-    log.info(`✅ Crawler finished. Total saved: ${saved} jobs`);
+        log.info(`Fetching page ${page}: ${apiUrl.href}`);
+        const payload = await fetchWithRetry({
+            url: apiUrl.href,
+            responseType: 'json',
+            label: `Search API page ${page}`,
+        });
+
+        const jobs = payload?.pageProps?.jobCardData?.jobs?.results ?? [];
+        const totalAvailable = payload?.pageProps?.jobCardData?.jobs?.totalCount ?? null;
+
+        if (!Array.isArray(jobs) || jobs.length === 0) {
+            log.info(`No jobs found on page ${page}. Stopping pagination.`);
+            break;
+        }
+
+        const batch = [];
+        for (const job of jobs) {
+            if (saved + batch.length >= resultsWanted) break;
+            if (!locationMatches(job, location)) continue;
+
+            const mapped = mapJob(job, searchKeyword, location);
+            if (!mapped) continue;
+
+            const dedupeKey = createDedupeKey(job, mapped);
+            if (!dedupeKey || seen.has(dedupeKey)) continue;
+
+            seen.add(dedupeKey);
+            batch.push(mapped);
+        }
+
+        if (batch.length > 0) {
+            await Dataset.pushData(batch);
+            saved += batch.length;
+            log.info(`Saved ${batch.length} items from page ${page}. Total: ${saved}/${resultsWanted}.`, {
+                totalAvailable,
+            });
+        } else {
+            log.warning(`No items matched filters on page ${page}.`);
+        }
+
+        if (jobs.length < 50) {
+            log.info(`Last page reached at page ${page} (response size ${jobs.length}).`);
+            break;
+        }
+
+        page += 1;
+    }
 
     if (saved === 0) {
-        log.warning(`⚠ No jobs were scraped. Check if the website structure has changed.`);
+        log.warning('No jobs were saved. Try a broader keyword or empty location filter.');
     }
+
+    log.info(`Extraction complete. Total saved: ${saved}.`);
 });

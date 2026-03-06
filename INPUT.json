@@ -1,11 +1,9 @@
 {
   "keyword": "software engineer",
-  "results_wanted": 50,
+  "location": "",
+  "results_wanted": 20,
   "max_pages": 10,
   "proxyConfiguration": {
-    "useApifyProxy": true,
-    "apifyProxyGroups": [
-      "RESIDENTIAL"
-    ]
+    "useApifyProxy": false
   }
 }

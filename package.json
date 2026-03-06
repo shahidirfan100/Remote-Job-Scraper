@@ -1,16 +1,16 @@
 {
   "name": "remoteco-jobs-actor",
-  "version": "1.0.0",
+  "version": "1.0",
   "description": "Lightweight Remote.co jobs scraper using Cheerio (Crawlee + gotScraping).",
   "type": "module",
   "scripts": {
     "start": "node src/main.js"
   },
   "dependencies": {
-    "apify": "^3.5.2",
-    "crawlee": "^3.15.3",
-    "cheerio": "^1.0.0-rc.12",
-    "got-scraping": "^4.1.2",
-    "header-generator": "^2.1.27"
+    "apify": "^3.6.0",
+    "crawlee": "^3.16.0",
+    "cheerio": "^1.2.0",
+    "got-scraping": "^4.2.1",
+    "header-generator": "^2.1.80"
   }
 }

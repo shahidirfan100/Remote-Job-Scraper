@@ -1,28 +1,31 @@
 {
   "title": "Remote.co Jobs Scraper",
-  "description": "Extract remote job listings from Remote.co with customizable search options.",
+  "description": "Extract remote job listings from Remote.co using structured source data with richer job fields.",
   "type": "object",
   "schemaVersion": 1,
   "properties": {
     "startUrl": {
       "title": "Search URL (Optional)",
       "type": "string",
-      "description": "Remote.co search URL. If provided, keyword and location will be ignored.",
+      "description": "Optional Remote.co search URL. Can include searchkeyword and page query parameters.",
       "editor": "textfield",
-      "pattern": "^https?://.*remote\\.co.*$"
+      "pattern": "^https?://.*remote\\.co.*$",
+      "prefill": "https://remote.co/remote-jobs/search?searchkeyword=software+engineer"
     },
     "keyword": {
       "title": "Search Keyword",
       "type": "string",
       "description": "Job title or skill (e.g., 'Software Engineer', 'Marketing Manager').",
       "editor": "textfield",
+      "default": "software engineer",
       "prefill": "software engineer"
     },
     "location": {
       "title": "Location (Optional)",
       "type": "string",
       "description": "Filter by location. Leave empty for worldwide remote jobs.",
-      "editor": "textfield"
+      "editor": "textfield",
+      "prefill": ""
     },
     "results_wanted": {
       "title": "Maximum Jobs",
@@ -30,7 +33,8 @@
       "description": "Maximum number of job listings to collect.",
       "minimum": 1,
       "maximum": 10000,
-      "default": 50,
+      "default": 20,
+      "prefill": 20,
       "editor": "number"
     },
     "max_pages": {
@@ -40,6 +44,7 @@
       "minimum": 1,
       "maximum": 100,
       "default": 10,
+      "prefill": 10,
       "editor": "number"
     },
     "proxyConfiguration": {
@@ -48,10 +53,7 @@
       "description": "Proxy settings for reliable scraping.",
       "editor": "proxy",
       "default": {
-        "useApifyProxy": true,
-        "apifyProxyGroups": [
-          "RESIDENTIAL"
-        ]
+        "useApifyProxy": false
       }
     }
   },

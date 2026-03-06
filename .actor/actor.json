@@ -3,7 +3,7 @@
   "name": "remote-co-jobs-scraper",
   "title": "Remote.co Jobs Scraper",
   "description": "Extract remote job listings from Remote.co with salary, location, and job type data.",
-  "version": "1.0.0",
+  "version": "1.0",
   "buildTag": "latest",
   "dockerfile": "../Dockerfile",
   "readme": "../README.md",
@@ -13,6 +13,6 @@
     "dataset": "./dataset_schema.json"
   },
   "meta": {
-    "generatedBy": "claude-sonnet-4-20250514"
+    "generatedBy": "GPT-5.3-Codex"
   }
 }

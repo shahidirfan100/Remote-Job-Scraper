@@ -10,9 +10,12 @@
           "title",
           "company",
           "location",
+          "countries",
           "job_type",
+          "employment_type",
           "remote_type",
           "salary",
+          "career_level",
           "date_posted",
           "url"
         ],
@@ -33,8 +36,16 @@
             "label": "Location",
             "format": "text"
           },
+          "countries": {
+            "label": "Countries",
+            "format": "array"
+          },
           "job_type": {
             "label": "Schedule",
+            "format": "text"
+          },
+          "employment_type": {
+            "label": "Employment Type",
             "format": "text"
           },
           "remote_type": {
@@ -44,6 +55,10 @@
           "salary": {
             "label": "Salary",
             "format": "text"
+          },
+          "career_level": {
+            "label": "Career Level",
+            "format": "array"
           },
           "date_posted": {
             "label": "Posted",

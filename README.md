@@ -1,162 +1,210 @@
 # Remote.co Jobs Scraper
 
-Effortlessly extract remote job listings from [Remote.co](https://remote.co), one of the leading platforms for remote work opportunities. Collect structured job data including titles, companies, salaries, locations, and more.
+Extract clean remote job data from Remote.co with built-in deduplication and normalized output. Collect structured listings for hiring research, salary benchmarking, and market monitoring. Each dataset item is sanitized to remove null and empty values so downstream analysis stays reliable.
 
-## What does Remote.co Jobs Scraper do?
+## Features
 
-This actor automatically scrapes remote job listings from Remote.co and outputs structured data in JSON format. It handles pagination, avoids duplicates, and provides all the essential job details you need for job market research, recruitment, or career planning.
+- **Clean Output Records** - Null, empty, and blank values are removed before data is saved.
+- **Duplicate Protection** - Listings are deduplicated using stable job identity keys.
+- **Flexible Search Inputs** - Search by keyword, optional location filter, or a Remote.co search URL.
+- **Rich Job Coverage** - Collect role details, schedule, location metadata, compensation info, and apply links.
+- **Pagination Control** - Limit pages and total records to match your data collection budget.
 
-**Key capabilities:**
+## Use Cases
 
-- 🔍 Search jobs by keyword and location
-- 💰 Extract salary information when available
-- 📍 Capture job locations and remote work options
-- 📅 Get posting dates for freshness analysis
-- 🔗 Collect direct URLs to job listings
-- ⚡ Fast and efficient with automatic pagination
+### Hiring Intelligence
+Track active remote roles across functions and regions to benchmark hiring demand. Identify what job types and seniority levels are most common in your target market.
 
-## Why scrape Remote.co?
+### Salary Benchmarking
+Collect compensation ranges and related role context for compensation planning. Build periodic snapshots to monitor salary movement over time.
 
-Remote.co is a trusted source for legitimate remote job opportunities. Scraping this data helps you:
+### Job Board Aggregation
+Create a clean dataset feed for your internal tools or dashboards. Since null and empty values are removed, data pipelines stay easier to maintain.
 
-- **Recruiters**: Build talent pipelines and track competitor job postings
-- **Job Seekers**: Aggregate opportunities across multiple searches
-- **Researchers**: Analyze remote work trends and salary data
-- **HR Teams**: Benchmark compensation and job requirements
-- **Entrepreneurs**: Identify market demands and skill trends
+### Trend Analysis
+Measure remote work patterns by country, schedule type, and career level. Use repeat runs to compare weekly or monthly changes in demand.
 
-## Input
+## Input Parameters
 
-Configure the scraper to match your needs:
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `startUrl` | String | No | `https://remote.co/remote-jobs/search?searchkeyword=software+engineer` | Optional Remote.co search URL. Useful when you want to start from a prepared search page. |
+| `keyword` | String | No | `software engineer` | Job keyword used for search when `startUrl` is not provided. |
+| `location` | String | No | `""` | Optional location filter. Leave empty for broad remote coverage. |
+| `results_wanted` | Integer | No | `20` | Maximum number of cleaned records to save. |
+| `max_pages` | Integer | No | `10` | Maximum number of search pages to process. |
+| `proxyConfiguration` | Object | No | `{ "useApifyProxy": false }` | Optional proxy settings for request routing. |
 
-| Field | Description | Default |
-|-------|-------------|---------|
-| **keyword** | Job title or skill to search (e.g., "Software Engineer") | `software engineer` |
-| **location** | Filter by location (leave empty for worldwide) | - |
-| **results_wanted** | Maximum number of jobs to collect | `50` |
-| **max_pages** | Maximum search result pages to process | `10` |
-| **proxyConfiguration** | Proxy settings for reliable scraping | Residential proxies |
+When runtime input is empty, the actor falls back to values defined in `.actor/input_schema.json` (`default`, then `prefill`).
 
-### Example Input
+## Output Data
 
-```json
-{
-  "keyword": "data analyst",
-  "results_wanted": 100,
-  "max_pages": 10
-}
-```
+Each item in the dataset contains non-empty fields only. Typical fields include:
 
-## Output
-
-Each job listing includes the following fields:
-
-| Field | Description | Example |
-|-------|-------------|---------|
-| `title` | Job position title | "Senior Software Engineer" |
-| `company` | Company name (when available) | "Tech Corp" |
-| `location` | Job location or region | "US National" |
-| `job_type` | Work schedule | "Full-Time" |
-| `employment_type` | Employment classification | "Employee" |
-| `remote_type` | Remote work arrangement | "100% Remote Work" |
-| `salary` | Compensation range | "$120,000 - $150,000 Annually" |
-| `date_posted` | When the job was posted | "2025-12-15T10:00:00Z" |
-| `url` | Direct link to job posting | "https://remote.co/remote-jobs/..." |
-
-### Sample Output
-
-```json
-{
-  "title": "Senior Software Engineer",
-  "company": null,
-  "location": "US National",
-  "job_type": "Full-Time",
-  "employment_type": "Employee",
-  "remote_type": "100% Remote Work",
-  "salary": "$137,250 - $185,250 Annually",
-  "date_posted": "2025-11-12T18:25:18Z",
-  "url": "https://remote.co/remote-jobs/senior-software-engineer-abc123"
-}
-```
+| Field | Type | Description |
+|---|---|---|
+| `id` | String | Unique listing identifier. |
+| `title` | String | Job title. |
+| `company` | String | Employer name when available. |
+| `location` | String | Human-readable location summary. |
+| `job_locations` | Array | Detailed job location values. |
+| `candidate_locations` | Array | Candidate eligibility location values. |
+| `countries` | Array | Country values associated with the role. |
+| `states` | Array | State or region values when available. |
+| `cities` | Array | City values when available. |
+| `remote_type` | String | Remote setup summary (for example, full remote or hybrid). |
+| `job_type` | String | Schedule summary (for example, full-time). |
+| `employment_type` | String | Employment classification summary. |
+| `salary` | String | Compensation text as shown in listing. |
+| `salary_min` | Number | Parsed minimum salary when available. |
+| `salary_max` | Number | Parsed maximum salary when available. |
+| `salary_unit` | String | Salary unit when available. |
+| `salary_currency` | String | Salary currency when available. |
+| `date_posted` | String | Listing publish timestamp. |
+| `career_level` | Array | Career level labels. |
+| `education_levels` | Array | Education labels. |
+| `apply_url` | String | Apply destination URL. |
+| `url` | String | Listing URL. |
+| `search_keyword` | String | Keyword used for the run. |
+| `search_location` | String | Location filter used for the run. |
 
 ## Usage Examples
 
-### Find Software Engineering Jobs
+### Basic Job Collection
 
 ```json
 {
   "keyword": "software engineer",
-  "results_wanted": 50
+  "results_wanted": 20
 }
 ```
 
-### Collect Marketing Positions
+### Location-Filtered Search
 
 ```json
 {
-  "keyword": "marketing manager",
-  "location": "Europe",
-  "results_wanted": 100,
-  "max_pages": 15
+  "keyword": "data analyst",
+  "location": "United States",
+  "results_wanted": 50,
+  "max_pages": 5
 }
 ```
 
-### Large-Scale Data Collection
+### Start From a Prepared Search URL
 
 ```json
 {
-  "keyword": "developer",
-  "results_wanted": 500,
-  "max_pages": 50
+  "startUrl": "https://remote.co/remote-jobs/search?searchkeyword=marketing+manager",
+  "results_wanted": 30,
+  "max_pages": 4
+}
+```
+
+## Sample Output
+
+```json
+{
+  "id": "29db71ed-ce41-4b26-83bd-c741c92163ab",
+  "title": "Software Engineer",
+  "location": "Louisville, KY",
+  "job_locations": [
+    "Louisville, KY"
+  ],
+  "countries": [
+    "United States"
+  ],
+  "remote_type": "Hybrid Remote Work",
+  "job_type": "Full-Time",
+  "employment_type": "Employee",
+  "salary": "80,900.00 - 110,300.00 USD Annually",
+  "date_posted": "2026-03-04T05:06:20Z",
+  "career_level": [
+    "Experienced"
+  ],
+  "apply_status": "None",
+  "score": 239.34076,
+  "url": "https://remote.co/remote-jobs/software-engineer-29db71ed-ce41-4b26-83bd-c741c92163ab",
+  "apply_url": "https://remote.co/remote-jobs/software-engineer-29db71ed-ce41-4b26-83bd-c741c92163ab",
+  "_source": "remote.co",
+  "search_keyword": "software engineer"
+}
+```
+
+## Tips for Best Results
+
+### Start With Small Runs
+Use `results_wanted: 20` for quick validation, then scale up after confirming output quality.
+
+### Use Specific Keywords
+Narrow job keywords usually produce higher relevance and reduce post-processing work.
+
+### Control Dataset Size
+Tune both `results_wanted` and `max_pages` to keep runs predictable and cost-efficient.
+
+### Keep Filters Intentional
+Use an empty `location` for broad coverage, or provide a specific location for focused analysis.
+
+## Proxy Configuration
+
+For improved request reliability in some environments, pass a proxy configuration:
+
+```json
+{
+  "proxyConfiguration": {
+    "useApifyProxy": true,
+    "apifyProxyGroups": ["RESIDENTIAL"]
+  }
 }
 ```
 
 ## Integrations
 
-Connect your scraped data to other services:
+Connect output data with:
 
-- **Google Sheets**: Export job listings for tracking and analysis
-- **Slack**: Get notifications for new job postings
-- **Webhooks**: Send data to your own applications
-- **APIs**: Access results programmatically
+- **Google Sheets** - Build sharable hiring and salary tracking sheets.
+- **Airtable** - Maintain searchable role databases.
+- **Slack** - Trigger notifications for new role patterns.
+- **Webhooks** - Forward data into custom services.
+- **Make** - Automate processing workflows.
+- **Zapier** - Connect to business apps without code.
 
-## Tips for Best Results
+### Export Formats
 
-1. **Start small** - Test with 10-20 results before large runs
-2. **Use specific keywords** - More targeted searches yield better results
-3. **Enable proxies** - Residential proxies provide the best success rates
-4. **Check regularly** - New jobs are posted daily
-5. **Monitor logs** - Review run logs to troubleshoot any issues
+- **JSON** - Best for APIs and engineering workflows.
+- **CSV** - Ideal for spreadsheet analysis.
+- **Excel** - Useful for business reporting.
+- **XML** - Suitable for legacy integrations.
 
-## Cost Estimation
+## Frequently Asked Questions
 
-The actor is optimized for efficiency. Typical costs:
+### Why are some fields missing in certain items?
+Fields are saved only when they contain meaningful values. Empty and null fields are intentionally removed to keep data clean.
 
-| Jobs | Estimated Cost |
-|------|----------------|
-| 50 | ~$0.01 |
-| 500 | ~$0.05 |
-| 5,000 | ~$0.50 |
+### How are duplicates prevented?
+The actor applies stable identity checks per listing before saving records, so duplicate items are skipped.
 
-*Costs may vary based on proxy usage and request delays.*
+### What happens if I run with empty input?
+The actor uses values from `.actor/input_schema.json` (`default`, then `prefill`) when no runtime input is provided.
 
-## Limitations
+### Can I use only `startUrl` without `keyword`?
+Yes. If `startUrl` includes a search keyword in the URL query, the actor can run without a separate `keyword` value.
 
-- **Company names**: Some listings show company names only after login
-- **Job descriptions**: Full descriptions require website authentication
-- **Rate limits**: Very high-volume scraping may require slower request delays
+### Can I collect more than 20 records?
+Yes. Increase `results_wanted` and optionally `max_pages` based on your use case.
+
+### Is the dataset suitable for downstream automation?
+Yes. Because null and blank values are removed, records are cleaner for analytics and integrations.
 
 ## Support
 
-If you encounter issues:
+For issues or feature requests, open a request through the Apify Console actor page.
 
-1. Check the run logs for error details
-2. Verify your input configuration
-3. Try with residential proxies enabled
-4. Start with a smaller `results_wanted` value
+### Resources
 
-For questions or feature requests, please reach out through the Apify platform.
+- [Apify Documentation](https://docs.apify.com/)
+- [Apify API Reference](https://docs.apify.com/api/v2)
+- [Apify Scheduling](https://docs.apify.com/platform/schedules)
 
----
+## Legal Notice
 
-*This actor is designed for legitimate job market research and recruitment purposes. Please use responsibly.*
+This actor is intended for legitimate data collection and market research use cases. Users are responsible for complying with applicable laws and website terms.
